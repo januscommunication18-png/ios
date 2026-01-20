@@ -1,0 +1,5 @@
+build/
+.idea/
+*.xcuserstate
+DerivedData/
+.DS_Store
