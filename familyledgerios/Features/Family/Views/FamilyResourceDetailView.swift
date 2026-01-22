@@ -242,11 +242,15 @@ struct FamilyResourceDetailView: View {
 struct FileRow: View {
     let file: ResourceFile
     @State private var showImageViewer = false
+    @State private var isDownloading = false
+    @State private var showDownloadSuccess = false
 
     var body: some View {
         Button {
             if file.isImage == true {
                 showImageViewer = true
+            } else if file.isPdf == true {
+                downloadFile()
             } else if let viewUrl = file.viewUrl, let url = URL(string: viewUrl) {
                 UIApplication.shared.open(url)
             }
@@ -291,19 +295,82 @@ struct FileRow: View {
 
                 Spacer()
 
-                // View indicator
-                Image(systemName: file.isImage == true ? "arrow.up.left.and.arrow.down.right" : "eye")
-                    .font(.system(size: 14))
-                    .foregroundColor(AppColors.textTertiary)
+                // Action indicator
+                if isDownloading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if showDownloadSuccess {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: actionIcon)
+                        .font(.system(size: 16))
+                        .foregroundColor(file.isPdf == true ? AppColors.primary : AppColors.textTertiary)
+                }
             }
             .padding(12)
             .background(Color(.systemGray6).opacity(0.5))
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
+        .disabled(isDownloading)
         .fullScreenCover(isPresented: $showImageViewer) {
             if let viewUrl = file.viewUrl {
                 ImageViewerSheet(imageUrl: viewUrl, fileName: file.displayName)
+            }
+        }
+    }
+
+    private var actionIcon: String {
+        if file.isImage == true {
+            return "arrow.up.left.and.arrow.down.right"
+        } else if file.isPdf == true {
+            return "arrow.down.circle.fill"
+        } else {
+            return "eye"
+        }
+    }
+
+    private func downloadFile() {
+        guard let downloadUrlString = file.downloadUrl ?? file.viewUrl,
+              let url = URL(string: downloadUrlString) else { return }
+
+        isDownloading = true
+
+        Task {
+            do {
+                let (localUrl, _) = try await URLSession.shared.download(from: url)
+
+                // Move to documents directory
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destinationUrl = documentsPath.appendingPathComponent(file.displayName)
+
+                // Remove existing file if exists
+                try? FileManager.default.removeItem(at: destinationUrl)
+                try FileManager.default.moveItem(at: localUrl, to: destinationUrl)
+
+                await MainActor.run {
+                    isDownloading = false
+                    showDownloadSuccess = true
+
+                    // Share/open the file
+                    let activityVC = UIActivityViewController(activityItems: [destinationUrl], applicationActivities: nil)
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        rootVC.present(activityVC, animated: true)
+                    }
+
+                    // Reset success icon after delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        showDownloadSuccess = false
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isDownloading = false
+                    print("Download failed: \(error)")
+                }
             }
         }
     }

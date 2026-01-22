@@ -4,8 +4,8 @@ import Foundation
 final class APIClient {
     static let shared = APIClient()
 
-/*     private let baseURL = "https://meetfamilyhub.com/api/v1" */
-    private let baseURL = "http://localhost:8000/api/v1"
+private let baseURL = "https://meetfamilyhub.com/api/v1"
+//private let baseURL = "http://localhost:8000/api/v1"
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder

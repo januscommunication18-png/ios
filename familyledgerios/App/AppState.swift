@@ -3,6 +3,11 @@ import SwiftUI
 
 @Observable
 final class AppState {
+    // MARK: - Security Code State
+    var isSecurityCodeVerified: Bool = false
+    private let validSecurityCodes = ["1000", "2000", "3000", "4000"]
+    private let securityCodeKey = "security_code_verified"
+
     // MARK: - Auth State
     var user: User?
     var tenant: Tenant?
@@ -31,12 +36,29 @@ final class AppState {
 
     init() {
         setupAPIClientCallback()
+        loadSecurityCodeStatus()
     }
 
     private func setupAPIClientCallback() {
         APIClient.shared.onUnauthorized = { [weak self] in
             self?.logout()
         }
+    }
+
+    private func loadSecurityCodeStatus() {
+        isSecurityCodeVerified = UserDefaults.standard.bool(forKey: securityCodeKey)
+    }
+
+    // MARK: - Security Code Methods
+
+    @MainActor
+    func verifySecurityCode(_ code: String) -> Bool {
+        if validSecurityCodes.contains(code) {
+            isSecurityCodeVerified = true
+            UserDefaults.standard.set(true, forKey: securityCodeKey)
+            return true
+        }
+        return false
     }
 
     // MARK: - Auth Methods

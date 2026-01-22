@@ -19,6 +19,9 @@ struct RootView: View {
         Group {
             if appState.isLoading {
                 SplashView()
+            } else if !appState.isSecurityCodeVerified {
+                // Security Code Gate - First screen
+                SecurityCodeView()
             } else if appState.isAuthenticated {
                 if appState.showOnboarding {
                     OnboardingContainerView()
@@ -32,6 +35,7 @@ struct RootView: View {
         .task {
             await appState.initialize()
         }
+        .animation(.easeInOut, value: appState.isSecurityCodeVerified)
         .animation(.easeInOut, value: appState.isAuthenticated)
         .animation(.easeInOut, value: appState.showOnboarding)
         .animation(.easeInOut, value: appState.isLoading)
