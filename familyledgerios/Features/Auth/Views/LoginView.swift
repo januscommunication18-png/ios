@@ -31,7 +31,7 @@ struct LoginView: View {
 
                     // Logo Section
                     VStack(spacing: 8) {
-                        Text("Family Ledger")
+                        Text("Meet Olliee")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(AppColors.primary)
 
@@ -95,7 +95,7 @@ struct LoginView: View {
                     Spacer(minLength: 40)
 
                     // Footer
-                    Text("\u{00A9} \(Calendar.current.component(.year, from: Date())) Family Ledger. All rights reserved.")
+                    Text("\u{00A9} \(Calendar.current.component(.year, from: Date())) Meet Olliee. All rights reserved.")
                         .font(.system(size: 12))
                         .foregroundColor(Color(.systemGray))
                         .padding(.bottom, 20)

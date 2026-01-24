@@ -35,7 +35,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         queryItems: [URLQueryItem]? = nil
     ) async throws -> T {
         let request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
-        return try await performRequest(request)
+        return try await performRequest(request, endpoint: endpoint)
     }
 
     func request<T: Decodable, B: Encodable>(
@@ -45,7 +45,17 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
     ) async throws -> T {
         var request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
         request.httpBody = try encoder.encode(body)
-        return try await performRequest(request)
+        return try await performRequest(request, endpoint: endpoint)
+    }
+
+    func request<T: Decodable>(
+        _ endpoint: APIEndpoint,
+        bodyDict: [String: Any],
+        queryItems: [URLQueryItem]? = nil
+    ) async throws -> T {
+        var request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
+        request.httpBody = try JSONSerialization.data(withJSONObject: bodyDict)
+        return try await performRequest(request, endpoint: endpoint)
     }
 
     func requestWithResponse<T: Decodable>(
@@ -53,7 +63,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         queryItems: [URLQueryItem]? = nil
     ) async throws -> APIResponse<T> {
         let request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
-        return try await performRequestWithResponse(request)
+        return try await performRequestWithResponse(request, endpoint: endpoint)
     }
 
     func requestWithResponse<T: Decodable, B: Encodable>(
@@ -63,7 +73,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
     ) async throws -> APIResponse<T> {
         var request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
         request.httpBody = try encoder.encode(body)
-        return try await performRequestWithResponse(request)
+        return try await performRequestWithResponse(request, endpoint: endpoint)
     }
 
     func requestEmpty(
@@ -71,7 +81,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         queryItems: [URLQueryItem]? = nil
     ) async throws {
         let request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
-        let _: EmptyResponse = try await performRequest(request)
+        let _: EmptyResponse = try await performRequest(request, endpoint: endpoint)
     }
 
     func requestEmpty<B: Encodable>(
@@ -81,7 +91,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
     ) async throws {
         var request = try buildRequest(endpoint: endpoint, queryItems: queryItems)
         request.httpBody = try encoder.encode(body)
-        let _: EmptyResponse = try await performRequest(request)
+        let _: EmptyResponse = try await performRequest(request, endpoint: endpoint)
     }
 
     // MARK: - Multipart Form Data
@@ -119,7 +129,7 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
 
-        return try await performRequest(request)
+        return try await performRequest(request, endpoint: endpoint)
     }
 
     // MARK: - Private Methods
@@ -142,34 +152,46 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        // Add auth token if available
-        if let token = KeychainService.shared.getToken() {
+        // Add auth token only if endpoint requires authentication
+        if endpoint.requiresAuth, let token = KeychainService.shared.getToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
         return request
     }
 
-    private func performRequest<T: Decodable>(_ request: URLRequest) async throws -> T {
+    private func performRequest<T: Decodable>(_ request: URLRequest, endpoint: APIEndpoint) async throws -> T {
+        print("DEBUG API: Making request to \(request.url?.absoluteString ?? "nil")")
+
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("DEBUG API: Invalid response (not HTTP)")
             throw APIError.invalidResponse
         }
 
-        try handleStatusCode(httpResponse.statusCode, data: data)
+        print("DEBUG API: Response status code: \(httpResponse.statusCode)")
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("DEBUG API: Response body: \(responseString.prefix(500))")
+        }
+
+        try handleStatusCode(httpResponse.statusCode, data: data, endpoint: endpoint)
 
         do {
             // Try to decode as APIResponse first
             let apiResponse = try decoder.decode(APIResponse<T>.self, from: data)
             if apiResponse.success, let responseData = apiResponse.data {
+                print("DEBUG API: Successfully decoded response")
                 return responseData
             } else if let errors = apiResponse.errors {
+                print("DEBUG API: Validation errors: \(errors)")
                 throw APIError.validationError(errors: errors)
             } else {
+                print("DEBUG API: Server error: \(apiResponse.message)")
                 throw APIError.serverError(message: apiResponse.message)
             }
         } catch let decodingError as DecodingError {
+            print("DEBUG API: Decoding error: \(decodingError)")
             // If APIResponse decoding fails, try direct decoding
             do {
                 return try decoder.decode(T.self, from: data)
@@ -179,14 +201,14 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         }
     }
 
-    private func performRequestWithResponse<T: Decodable>(_ request: URLRequest) async throws -> APIResponse<T> {
+    private func performRequestWithResponse<T: Decodable>(_ request: URLRequest, endpoint: APIEndpoint) async throws -> APIResponse<T> {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
 
-        try handleStatusCode(httpResponse.statusCode, data: data)
+        try handleStatusCode(httpResponse.statusCode, data: data, endpoint: endpoint)
 
         do {
             return try decoder.decode(APIResponse<T>.self, from: data)
@@ -195,15 +217,25 @@ private let baseURL = "https://meetfamilyhub.com/api/v1"
         }
     }
 
-    private func handleStatusCode(_ statusCode: Int, data: Data) throws {
+    private func handleStatusCode(_ statusCode: Int, data: Data, endpoint: APIEndpoint) throws {
         switch statusCode {
         case 200...299:
             return
         case 401:
-            DispatchQueue.main.async { [weak self] in
-                self?.onUnauthorized?()
+            // Only trigger onUnauthorized for authenticated endpoints
+            // For public endpoints like login, 401 means invalid credentials
+            if endpoint.requiresAuth {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onUnauthorized?()
+                }
+                throw APIError.unauthorized
+            } else {
+                // For login/auth endpoints, throw a more appropriate error
+                if let apiResponse = try? decoder.decode(APIResponse<EmptyResponse>.self, from: data) {
+                    throw APIError.serverError(message: apiResponse.message)
+                }
+                throw APIError.serverError(message: "Invalid credentials")
             }
-            throw APIError.unauthorized
         case 403:
             throw APIError.forbidden
         case 404:

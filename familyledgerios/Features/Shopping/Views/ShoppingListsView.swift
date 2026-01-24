@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct AddShoppingItemRequest: Encodable {
     let name: String
@@ -229,10 +230,12 @@ struct ShoppingListsView: View {
 struct ShoppingDetailView: View {
     let listId: Int
     @State private var viewModel = ShoppingViewModel()
-    @State private var isStoreMode = false
+    // @State private var isStoreMode = false // Commented out - Store Mode disabled for now
     @State private var hasLoaded = false
     @State private var refreshID = UUID()
     @FocusState private var isAddFieldFocused: Bool
+    @State private var showShareSheet = false
+    @State private var showPrintError = false
 
     var body: some View {
         Group {
@@ -243,13 +246,14 @@ struct ShoppingDetailView: View {
                     Task { await viewModel.loadList(id: listId) }
                 }
             } else if let list = viewModel.selectedList {
-                if isStoreMode {
-                    storeModeContent(list: list)
-                        .id(refreshID)
-                } else {
+                // Store Mode commented out for now
+                // if isStoreMode {
+                //     storeModeContent(list: list)
+                //         .id(refreshID)
+                // } else {
                     addModeContent(list: list)
                         .id(refreshID)
-                }
+                // }
             } else if !viewModel.isLoading {
                 // No list and not loading - show error
                 VStack(spacing: 16) {
@@ -273,19 +277,160 @@ struct ShoppingDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    withAnimation { isStoreMode.toggle() }
+                // Share/Print Menu
+                Menu {
+                    Button {
+                        showShareSheet = true
+                    } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        printList()
+                    } label: {
+                        Label("Print", systemImage: "printer")
+                    }
                 } label: {
-                    Label(isStoreMode ? "Add Mode" : "Store Mode",
-                          systemImage: isStoreMode ? "plus.circle" : "cart.fill")
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 17))
                 }
+
+                // Store Mode Toggle - Commented out for now
+                // Button {
+                //     withAnimation { isStoreMode.toggle() }
+                // } label: {
+                //     Label(isStoreMode ? "Add Mode" : "Store Mode",
+                //           systemImage: isStoreMode ? "plus.circle" : "cart.fill")
+                // }
             }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let list = viewModel.selectedList {
+                ShareSheet(activityItems: [generateShareText(list: list)])
+            }
+        }
+        .alert("Print Error", isPresented: $showPrintError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Unable to print. Please make sure a printer is available.")
         }
         .task {
             await viewModel.loadList(id: listId)
             hasLoaded = true
         }
         .refreshable { await viewModel.refreshList(id: listId) }
+    }
+
+    // MARK: - Share/Print/Email Functions
+
+    private func generateShareText(list: ShoppingList) -> String {
+        var text = "🛒 \(list.name)\n"
+        if let items = list.items {
+            let uncheckedItems = items.filter { $0.isChecked != true }
+            let checkedItems = items.filter { $0.isChecked == true }
+
+            if !uncheckedItems.isEmpty {
+                text += "\n📋 To Buy:\n"
+                for item in uncheckedItems {
+                    let qty = item.quantity ?? 1
+                    text += "• \(item.name)\(qty > 1 ? " ×\(qty)" : "")\n"
+                }
+            }
+
+            if !checkedItems.isEmpty {
+                text += "\n✅ Purchased:\n"
+                for item in checkedItems {
+                    let qty = item.quantity ?? 1
+                    text += "• \(item.name)\(qty > 1 ? " ×\(qty)" : "")\n"
+                }
+            }
+        }
+        text += "\n— Shared from Meet Olliee"
+        return text
+    }
+
+    private func printList() {
+        guard let list = viewModel.selectedList else { return }
+
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.outputType = .general
+        printInfo.jobName = list.name
+
+        let printController = UIPrintInteractionController.shared
+        printController.printInfo = printInfo
+
+        // Create printable content
+        let formatter = UIMarkupTextPrintFormatter(markupText: generatePrintHTML(list: list))
+        formatter.perPageContentInsets = UIEdgeInsets(top: 72, left: 72, bottom: 72, right: 72)
+        printController.printFormatter = formatter
+
+        printController.present(animated: true) { _, completed, error in
+            if !completed && error != nil {
+                showPrintError = true
+            }
+        }
+    }
+
+    private func generatePrintHTML(list: ShoppingList) -> String {
+        var html = """
+        <html>
+        <head>
+            <style>
+                body { font-family: -apple-system, Helvetica, Arial, sans-serif; }
+                h1 { font-size: 24px; margin-bottom: 4px; }
+                h2 { font-size: 16px; color: #666; margin-top: 20px; }
+                .date { color: #999; font-size: 12px; margin-bottom: 20px; }
+                ul { list-style: none; padding: 0; }
+                li { padding: 8px 0; border-bottom: 1px solid #eee; }
+                .checkbox { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-radius: 4px; margin-right: 12px; }
+                .checked { text-decoration: line-through; color: #999; }
+            </style>
+        </head>
+        <body>
+            <h1>\(list.name)</h1>
+            <p class="date">\(Date().formatted(date: .long, time: .omitted))</p>
+        """
+
+        if let items = list.items {
+            let uncheckedItems = items.filter { $0.isChecked != true }
+            let checkedItems = items.filter { $0.isChecked == true }
+
+            if !uncheckedItems.isEmpty {
+                html += "<h2>To Buy (\(uncheckedItems.count))</h2><ul>"
+                for item in uncheckedItems {
+                    let qty = item.quantity ?? 1
+                    html += "<li><span class=\"checkbox\"></span>\(item.name)\(qty > 1 ? " ×\(qty)" : "")</li>"
+                }
+                html += "</ul>"
+            }
+
+            if !checkedItems.isEmpty {
+                html += "<h2>Purchased (\(checkedItems.count))</h2><ul>"
+                for item in checkedItems {
+                    let qty = item.quantity ?? 1
+                    html += "<li class=\"checked\">✓ \(item.name)\(qty > 1 ? " ×\(qty)" : "")</li>"
+                }
+                html += "</ul>"
+            }
+        }
+
+        html += "</body></html>"
+        return html
+    }
+
+    private func emailList() {
+        guard let list = viewModel.selectedList else { return }
+
+        let subject = "Shopping List: \(list.name)"
+        let body = generateShareText(list: list)
+
+        // URL encode the subject and body
+        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+
+        if let url = URL(string: "mailto:?subject=\(encodedSubject)&body=\(encodedBody)") {
+            UIApplication.shared.open(url)
+        }
     }
 
     // MARK: - Add Mode Content
@@ -298,47 +443,120 @@ struct ShoppingDetailView: View {
             // Stats Bar
             statsBar(list: list)
 
-            // Items List
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    let uncheckedItems = (list.items ?? []).filter { $0.isChecked != true }
-                    let checkedItems = (list.items ?? []).filter { $0.isChecked == true }
+            // Items List with swipe support
+            let uncheckedItems = (list.items ?? []).filter { $0.isChecked != true }
+            let checkedItems = (list.items ?? []).filter { $0.isChecked == true }
+            let groupedItems = Dictionary(grouping: uncheckedItems) { $0.category ?? "other" }
 
-                    // Unchecked Items by Category
-                    let groupedItems = Dictionary(grouping: uncheckedItems) { $0.category ?? "other" }
-                    ForEach(groupedItems.keys.sorted(), id: \.self) { category in
-                        if let items = groupedItems[category] {
-                            categorySection(category: category, items: items)
-                        }
-                    }
-
-                    // Checked Items
-                    if !checkedItems.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("PURCHASED")
+            List {
+                // Unchecked Items by Category
+                ForEach(groupedItems.keys.sorted(), id: \.self) { category in
+                    if let items = groupedItems[category] {
+                        Section {
+                            ForEach(items) { item in
+                                itemRowForList(item: item)
+                            }
+                        } header: {
+                            let categoryInfo = ShoppingViewModel.categories.first { $0.0 == category } ?? ("other", "Other", "cart.fill")
+                            HStack(spacing: 8) {
+                                Image(systemName: categoryInfo.2)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppColors.shopping)
+                                Text(categoryInfo.1.uppercased())
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(AppColors.textSecondary)
-                                Spacer()
-                                Button("Clear") {
-                                    Task { await viewModel.clearChecked(listId: listId) }
-                                }
-                                .font(AppTypography.captionSmall)
-                                .foregroundColor(AppColors.textSecondary)
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, 16)
-
-                            ForEach(checkedItems) { item in
-                                itemRow(item: item, isStoreMode: false)
                             }
                         }
                     }
                 }
-                .padding(.vertical, 8)
+
+                // Checked Items
+                if !checkedItems.isEmpty {
+                    Section {
+                        ForEach(checkedItems) { item in
+                            itemRowForList(item: item)
+                        }
+                    } header: {
+                        HStack {
+                            Text("PURCHASED")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(AppColors.textSecondary)
+                            Spacer()
+                            Button("Clear") {
+                                Task { await viewModel.clearChecked(listId: listId) }
+                            }
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.textSecondary)
+                        }
+                    }
+                }
             }
+            .listStyle(.insetGrouped)
         }
         .background(Color(.systemGroupedBackground))
+    }
+
+    private func itemRowForList(item: ShoppingItem) -> some View {
+        let isChecked = item.isChecked == true
+
+        return HStack(spacing: 12) {
+            Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 22))
+                .foregroundColor(isChecked ? AppColors.success : AppColors.textTertiary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(AppTypography.bodyMedium)
+                    .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
+                    .strikethrough(isChecked)
+
+                if let notes = item.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(AppTypography.captionSmall)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+            }
+
+            Spacer()
+
+            if let qty = item.quantity, qty > 1 {
+                Text("×\(qty)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(AppColors.shopping)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AppColors.shopping.opacity(0.1))
+                    .cornerRadius(8)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Task {
+                await viewModel.toggleItem(listId: listId, itemId: item.id)
+                refreshID = UUID()
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button {
+                Task {
+                    await viewModel.toggleItem(listId: listId, itemId: item.id)
+                    refreshID = UUID()
+                }
+            } label: {
+                Label(isChecked ? "Unmark" : "Purchased", systemImage: isChecked ? "arrow.uturn.backward" : "cart.badge.checkmark")
+            }
+            .tint(isChecked ? .orange : AppColors.success)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                Task {
+                    await viewModel.deleteItem(listId: listId, itemId: item.id)
+                    refreshID = UUID()
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private var quickAddSection: some View {
@@ -448,7 +666,66 @@ struct ShoppingDetailView: View {
             .padding(.top, 8)
 
             ForEach(items) { item in
-                itemRow(item: item, isStoreMode: false)
+                swipeableItemRow(item: item)
+            }
+        }
+    }
+
+    private func swipeableItemRow(item: ShoppingItem) -> some View {
+        let isChecked = item.isChecked == true
+
+        return HStack(spacing: 12) {
+            Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 22))
+                .foregroundColor(isChecked ? AppColors.success : AppColors.textTertiary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(AppTypography.bodyMedium)
+                    .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
+                    .strikethrough(isChecked)
+
+                if let notes = item.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(AppTypography.captionSmall)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+            }
+
+            Spacer()
+
+            if let qty = item.quantity, qty > 1 {
+                Text("×\(qty)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(AppColors.shopping)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AppColors.shopping.opacity(0.1))
+                    .cornerRadius(8)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+        .background(AppColors.background)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button {
+                Task {
+                    await viewModel.toggleItem(listId: listId, itemId: item.id)
+                    refreshID = UUID()
+                }
+            } label: {
+                Label(isChecked ? "Unmark" : "Purchased", systemImage: isChecked ? "arrow.uturn.backward" : "checkmark")
+            }
+            .tint(isChecked ? .orange : AppColors.success)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                Task {
+                    await viewModel.deleteItem(listId: listId, itemId: item.id)
+                    refreshID = UUID()
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -797,4 +1074,21 @@ struct CreateShoppingListView: View {
         }
         isCreating = false
     }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    var applicationActivities: [UIActivity]? = nil
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: applicationActivities
+        )
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

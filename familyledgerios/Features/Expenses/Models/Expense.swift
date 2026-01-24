@@ -24,6 +24,9 @@ struct Expense: Codable, Identifiable, Equatable {
     let notes: String?
     let createdAt: String?
     let updatedAt: String?
+    let source: String?
+    let sourceLabel: String?
+    let hasReceipt: Bool?
 
     var amount: Double? {
         amountValue?.doubleValue
@@ -55,7 +58,7 @@ struct Expense: Codable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, description, category, date, status, notes, budget, payee
+        case id, description, category, date, status, notes, budget, payee, source
         case amountValue = "amount"
         case formattedAmount = "formatted_amount"
         case categoryId = "category_id"
@@ -71,6 +74,8 @@ struct Expense: Codable, Identifiable, Equatable {
         case receiptPath = "receipt_path"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case sourceLabel = "source_label"
+        case hasReceipt = "has_receipt"
     }
 
     static func == (lhs: Expense, rhs: Expense) -> Bool {
@@ -247,6 +252,20 @@ struct ExpensesResponse: Codable {
 
 struct ExpenseDetailResponse: Codable {
     let expense: Expense
+}
+
+struct CreateExpenseResponse: Codable {
+    let expense: Expense?
+    let message: String?
+}
+
+struct BudgetsListResponse: Codable {
+    let budgets: [Budget]
+    let total: Int?
+}
+
+struct CategoriesListResponse: Codable {
+    let categories: [ExpenseCategory]
 }
 
 struct SpendingByCategory: Codable, Identifiable {

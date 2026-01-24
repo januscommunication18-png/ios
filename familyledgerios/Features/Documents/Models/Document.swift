@@ -16,6 +16,17 @@ struct InsurancePolicy: Codable, Identifiable, Equatable {
     let createdAt: String?
     let updatedAt: String?
 
+    // Agent/Contact Information
+    let agentName: String?
+    let agentPhone: String?
+    let agentEmail: String?
+    let claimsPhone: String?
+    let coverageDetails: String?
+
+    // Insurance Card Images
+    let cardFrontImageUrl: String?
+    let cardBackImageUrl: String?
+
     enum CodingKeys: String, CodingKey {
         case id, status, notes
         case insuranceType = "insurance_type"
@@ -29,11 +40,39 @@ struct InsurancePolicy: Codable, Identifiable, Equatable {
         case expirationDate = "expiration_date"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case agentName = "agent_name"
+        case agentPhone = "agent_phone"
+        case agentEmail = "agent_email"
+        case claimsPhone = "claims_phone"
+        case coverageDetails = "coverage_details"
+        case cardFrontImageUrl = "card_front_image_url"
+        case cardBackImageUrl = "card_back_image_url"
     }
 
     // Computed properties for display
     var provider: String? { providerName }
     var policyType: String? { insuranceType }
+
+    // Insurance type display name
+    var insuranceTypeName: String {
+        guard let type = insuranceType else { return "Insurance" }
+        let types: [String: String] = [
+            "health": "Health Insurance",
+            "dental": "Dental Insurance",
+            "vision": "Vision Insurance",
+            "life": "Life Insurance",
+            "auto": "Auto Insurance",
+            "home": "Home Insurance",
+            "renters": "Renters Insurance",
+            "umbrella": "Umbrella Insurance",
+            "disability": "Disability Insurance",
+            "long_term_care": "Long Term Care Insurance",
+            "pet": "Pet Insurance",
+            "travel": "Travel Insurance",
+            "other": "Other Insurance"
+        ]
+        return types[type.lowercased()] ?? type.capitalized + " Insurance"
+    }
 
     static func == (lhs: InsurancePolicy, rhs: InsurancePolicy) -> Bool { lhs.id == rhs.id }
 }
@@ -59,10 +98,15 @@ struct TaxReturn: Codable, Identifiable, Equatable {
     let cpaEmail: String?
     let cpaFirm: String?
 
-    // Documents
+    // Documents (raw paths)
     let federalReturns: [String]?
     let stateReturns: [String]?
     let supportingDocuments: [String]?
+
+    // Document URLs
+    let federalReturnsUrls: [TaxDocument]?
+    let stateReturnsUrls: [TaxDocument]?
+    let supportingDocumentsUrls: [TaxDocument]?
 
     enum CodingKeys: String, CodingKey {
         case id, status, notes
@@ -83,9 +127,19 @@ struct TaxReturn: Codable, Identifiable, Equatable {
         case federalReturns = "federal_returns"
         case stateReturns = "state_returns"
         case supportingDocuments = "supporting_documents"
+        case federalReturnsUrls = "federal_returns_urls"
+        case stateReturnsUrls = "state_returns_urls"
+        case supportingDocumentsUrls = "supporting_documents_urls"
     }
 
     static func == (lhs: TaxReturn, rhs: TaxReturn) -> Bool { lhs.id == rhs.id }
+}
+
+struct TaxDocument: Codable, Identifiable, Equatable {
+    var id: String { path }
+    let path: String
+    let url: String
+    let name: String
 }
 
 struct DocumentsResponse: Codable {

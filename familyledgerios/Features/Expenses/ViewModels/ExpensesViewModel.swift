@@ -5,16 +5,18 @@ struct CreateExpenseRequest: Encodable {
     let amount: Double
     let categoryId: Int?
     let budgetId: Int?
-    let date: String
+    let transactionDate: String
     let paymentMethod: String?
     let isRecurring: Bool
     let recurringFrequency: String?
     let notes: String
+    let receipt: String?
 
     enum CodingKeys: String, CodingKey {
-        case description, amount, date, notes
+        case description, amount, notes, receipt
         case categoryId = "category_id"
         case budgetId = "budget_id"
+        case transactionDate = "transaction_date"
         case paymentMethod = "payment_method"
         case isRecurring = "is_recurring"
         case recurringFrequency = "recurring_frequency"
@@ -133,10 +135,18 @@ final class ExpensesViewModel {
     @MainActor
     func loadCategories() async {
         do {
-            let response: [ExpenseCategory] = try await APIClient.shared.request(.expenseCategories)
-            categories = response
+            // Try wrapped response first
+            let response: CategoriesListResponse = try await APIClient.shared.request(.expenseCategories)
+            categories = response.categories
         } catch {
-            // Categories loading is optional
+            // Try array response as fallback
+            do {
+                let response: [ExpenseCategory] = try await APIClient.shared.request(.expenseCategories)
+                categories = response
+            } catch {
+                // Categories loading is optional
+                print("Failed to load categories: \(error)")
+            }
         }
     }
 
@@ -147,23 +157,35 @@ final class ExpensesViewModel {
             return false
         }
 
+        guard !description.isEmpty else {
+            errorMessage = "Please enter a description"
+            return false
+        }
+
         isLoading = true
         errorMessage = nil
 
         do {
+            // Convert receipt data to base64 if available
+            var receiptBase64: String? = nil
+            if let data = receiptData {
+                receiptBase64 = "data:image/jpeg;base64," + data.base64EncodedString()
+            }
+
             let body = CreateExpenseRequest(
                 description: description,
                 amount: amountValue,
                 categoryId: categoryId,
                 budgetId: budgetId,
-                date: date.apiDateString,
+                transactionDate: date.apiDateString,
                 paymentMethod: paymentMethod?.rawValue,
                 isRecurring: isRecurring,
                 recurringFrequency: isRecurring ? recurringFrequency?.rawValue : nil,
-                notes: notes
+                notes: notes,
+                receipt: receiptBase64
             )
 
-            let _: Expense = try await APIClient.shared.request(.createExpense, body: body)
+            let _: CreateExpenseResponse = try await APIClient.shared.request(.createExpense, body: body)
             successMessage = "Expense created successfully"
             clearForm()
             isLoading = false
@@ -171,7 +193,7 @@ final class ExpensesViewModel {
         } catch let error as APIError {
             errorMessage = error.localizedDescription
         } catch {
-            errorMessage = "Failed to create expense"
+            errorMessage = "Failed to create expense: \(error.localizedDescription)"
         }
 
         isLoading = false
@@ -230,10 +252,20 @@ final class ExpensesViewModel {
     @MainActor
     func loadBudgets() async {
         do {
-            let response: [Budget] = try await APIClient.shared.request(.budgets)
-            budgets = response
+            // Try wrapped response first (API returns {budgets: [...], total: n})
+            let response: BudgetsListResponse = try await APIClient.shared.request(.budgets)
+            budgets = response.budgets
+            print("Loaded \(budgets.count) budgets from wrapped response")
         } catch {
-            // Budgets loading is optional
+            // Try array response as fallback
+            do {
+                let response: [Budget] = try await APIClient.shared.request(.budgets)
+                budgets = response
+                print("Loaded \(budgets.count) budgets from array response")
+            } catch {
+                // Budgets loading is optional
+                print("Failed to load budgets: \(error)")
+            }
         }
     }
 

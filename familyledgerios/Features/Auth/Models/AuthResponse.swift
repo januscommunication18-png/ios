@@ -11,6 +11,28 @@ struct LoginRequest: Encodable {
     }
 }
 
+struct RegisterRequest: Encodable {
+    let name: String
+    let email: String
+    let password: String
+    let passwordConfirmation: String
+    let deviceName: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, email, password
+        case passwordConfirmation = "password_confirmation"
+        case deviceName = "device_name"
+    }
+
+    init(name: String, email: String, password: String, deviceName: String) {
+        self.name = name
+        self.email = email
+        self.password = password
+        self.passwordConfirmation = password // Auto-set confirmation to same as password
+        self.deviceName = deviceName
+    }
+}
+
 struct OTPRequestBody: Encodable {
     let email: String
     let deviceName: String

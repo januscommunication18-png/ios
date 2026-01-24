@@ -8,6 +8,10 @@ final class AppState {
     private let validSecurityCodes = ["1000", "2000", "3000", "4000"]
     private let securityCodeKey = "security_code_verified"
 
+    // MARK: - First Launch / App Onboarding State
+    var hasCompletedAppOnboarding: Bool = false
+    private let appOnboardingKey = "has_completed_app_onboarding"
+
     // MARK: - Auth State
     var user: User?
     var tenant: Tenant?
@@ -47,6 +51,13 @@ final class AppState {
 
     private func loadSecurityCodeStatus() {
         isSecurityCodeVerified = UserDefaults.standard.bool(forKey: securityCodeKey)
+        hasCompletedAppOnboarding = UserDefaults.standard.bool(forKey: appOnboardingKey)
+    }
+
+    @MainActor
+    func completeAppOnboarding() {
+        hasCompletedAppOnboarding = true
+        UserDefaults.standard.set(true, forKey: appOnboardingKey)
     }
 
     // MARK: - Security Code Methods
@@ -68,47 +79,59 @@ final class AppState {
         guard !isInitialized else { return }
 
         isLoading = true
+        print("DEBUG AppState: Initializing...")
 
         // Load stored credentials
         if let storedToken = KeychainService.shared.getToken() {
+            print("DEBUG AppState: Found stored token, validating...")
             token = storedToken
 
             // Validate token with server
             do {
                 let response: UserResponse = try await APIClient.shared.request(.getUser)
+                print("DEBUG AppState: Token valid, setting auth")
                 setAuth(
                     token: storedToken,
                     user: response.user,
                     tenant: response.tenant
                 )
             } catch {
+                print("DEBUG AppState: Token invalid, clearing auth: \(error)")
                 // Token invalid, clear stored data
                 clearAuth()
             }
+        } else {
+            print("DEBUG AppState: No stored token found")
         }
 
         isLoading = false
         isInitialized = true
+        print("DEBUG AppState: Initialization complete, isAuthenticated: \(isAuthenticated)")
     }
 
     @MainActor
     func setAuth(token: String, user: User, tenant: Tenant, requiresOnboarding: Bool? = nil) {
+        print("DEBUG AppState.setAuth: Setting auth for user \(user.name)")
         self.token = token
         self.user = user
         self.tenant = tenant
         self.isAuthenticated = true
+        print("DEBUG AppState.setAuth: isAuthenticated = \(self.isAuthenticated)")
 
         // Only show onboarding if explicitly required or onboardingCompleted is explicitly false
         if let requires = requiresOnboarding {
             self.showOnboarding = requires
+            print("DEBUG AppState.setAuth: showOnboarding (explicit) = \(requires)")
         } else {
             self.showOnboarding = tenant.onboardingCompleted == false
+            print("DEBUG AppState.setAuth: showOnboarding (from tenant) = \(self.showOnboarding), onboardingCompleted = \(tenant.onboardingCompleted ?? false)")
         }
 
         // Persist to keychain
         KeychainService.shared.saveToken(token)
         KeychainService.shared.saveUserData(user)
         KeychainService.shared.saveTenantData(tenant)
+        print("DEBUG AppState.setAuth: Credentials persisted to keychain")
     }
 
     @MainActor

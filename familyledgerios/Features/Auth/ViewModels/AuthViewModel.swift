@@ -6,6 +6,7 @@ import UIKit
 final class AuthViewModel {
     // MARK: - Properties
 
+    var name = ""
     var email = ""
     var password = ""
     var otpCode = ""
@@ -67,7 +68,11 @@ final class AuthViewModel {
                 deviceName: deviceName
             )
 
+            print("DEBUG: Attempting login for \(email)")
             let response: AuthResponse = try await APIClient.shared.request(.login, body: request)
+            print("DEBUG: Login successful, token received: \(response.token.prefix(20))...")
+            print("DEBUG: User: \(response.user.name), Tenant: \(response.tenant.name)")
+            print("DEBUG: Onboarding completed: \(response.tenant.onboardingCompleted ?? false)")
 
             appState.setAuth(
                 token: response.token,
@@ -75,11 +80,14 @@ final class AuthViewModel {
                 tenant: response.tenant,
                 requiresOnboarding: response.requiresOnboarding
             )
+            print("DEBUG: Auth set, isAuthenticated: \(appState.isAuthenticated)")
 
             clearForm()
         } catch let error as APIError {
+            print("DEBUG: Login failed with APIError: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
         } catch {
+            print("DEBUG: Login failed with unexpected error: \(error)")
             errorMessage = "An unexpected error occurred"
         }
 
@@ -248,6 +256,53 @@ final class AuthViewModel {
             errorMessage = error.localizedDescription
         } catch {
             errorMessage = "Failed to resend reset code"
+        }
+
+        isLoading = false
+    }
+
+    @MainActor
+    func register(appState: AppState) async {
+        guard !name.isEmpty else {
+            errorMessage = "Please enter your name"
+            return
+        }
+
+        guard isEmailValid else {
+            errorMessage = "Please enter a valid email"
+            return
+        }
+
+        guard password.count >= 8 else {
+            errorMessage = "Password must be at least 8 characters"
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let request = RegisterRequest(
+                name: name,
+                email: email,
+                password: password,
+                deviceName: deviceName
+            )
+
+            let response: AuthResponse = try await APIClient.shared.request(.register, body: request)
+
+            appState.setAuth(
+                token: response.token,
+                user: response.user,
+                tenant: response.tenant,
+                requiresOnboarding: response.requiresOnboarding
+            )
+
+            clearForm()
+        } catch let error as APIError {
+            errorMessage = error.localizedDescription
+        } catch {
+            errorMessage = "An unexpected error occurred"
         }
 
         isLoading = false

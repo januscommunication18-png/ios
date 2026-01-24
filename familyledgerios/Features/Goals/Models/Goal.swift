@@ -10,12 +10,53 @@ struct Goal: Codable, Identifiable, Equatable {
     let status: String?
     let priority: String?
     let category: String?
+    let categoryEmoji: String?
+    let categoryColor: String?
+    // Goal type info
+    let goalType: String?
+    let habitFrequency: String?
+    let milestoneTarget: Int?
+    let milestoneCurrent: Int?
+    let milestoneUnit: String?
+    let milestoneProgress: Double?
+    // Assignment
+    let assignmentType: String?
+    let isKidGoal: Bool?
+    // Check-in & Rewards
+    let checkInFrequency: String?
+    let rewardsEnabled: Bool?
+    let rewardType: String?
+    let rewardCustom: String?
+    let rewardClaimed: Bool?
+    // Stats
+    let activeTasksCount: Int?
+    let completedTasksCount: Int?
+    let totalTasksCount: Int?
+    // Dates
     let createdAt: String?
     let updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, progress, status, priority, category
         case targetDate = "target_date"
+        case categoryEmoji = "category_emoji"
+        case categoryColor = "category_color"
+        case goalType = "goal_type"
+        case habitFrequency = "habit_frequency"
+        case milestoneTarget = "milestone_target"
+        case milestoneCurrent = "milestone_current"
+        case milestoneUnit = "milestone_unit"
+        case milestoneProgress = "milestone_progress"
+        case assignmentType = "assignment_type"
+        case isKidGoal = "is_kid_goal"
+        case checkInFrequency = "check_in_frequency"
+        case rewardsEnabled = "rewards_enabled"
+        case rewardType = "reward_type"
+        case rewardCustom = "reward_custom"
+        case rewardClaimed = "reward_claimed"
+        case activeTasksCount = "active_tasks_count"
+        case completedTasksCount = "completed_tasks_count"
+        case totalTasksCount = "total_tasks_count"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -29,6 +70,24 @@ struct Goal: Codable, Identifiable, Equatable {
         status = try container.decodeIfPresent(String.self, forKey: .status)
         priority = try container.decodeIfPresent(String.self, forKey: .priority)
         category = try container.decodeIfPresent(String.self, forKey: .category)
+        categoryEmoji = try container.decodeIfPresent(String.self, forKey: .categoryEmoji)
+        categoryColor = try container.decodeIfPresent(String.self, forKey: .categoryColor)
+        goalType = try container.decodeIfPresent(String.self, forKey: .goalType)
+        habitFrequency = try container.decodeIfPresent(String.self, forKey: .habitFrequency)
+        milestoneTarget = try container.decodeIfPresent(Int.self, forKey: .milestoneTarget)
+        milestoneCurrent = try container.decodeIfPresent(Int.self, forKey: .milestoneCurrent)
+        milestoneUnit = try container.decodeIfPresent(String.self, forKey: .milestoneUnit)
+        milestoneProgress = try container.decodeIfPresent(Double.self, forKey: .milestoneProgress)
+        assignmentType = try container.decodeIfPresent(String.self, forKey: .assignmentType)
+        isKidGoal = try container.decodeIfPresent(Bool.self, forKey: .isKidGoal)
+        checkInFrequency = try container.decodeIfPresent(String.self, forKey: .checkInFrequency)
+        rewardsEnabled = try container.decodeIfPresent(Bool.self, forKey: .rewardsEnabled)
+        rewardType = try container.decodeIfPresent(String.self, forKey: .rewardType)
+        rewardCustom = try container.decodeIfPresent(String.self, forKey: .rewardCustom)
+        rewardClaimed = try container.decodeIfPresent(Bool.self, forKey: .rewardClaimed)
+        activeTasksCount = try container.decodeIfPresent(Int.self, forKey: .activeTasksCount)
+        completedTasksCount = try container.decodeIfPresent(Int.self, forKey: .completedTasksCount)
+        totalTasksCount = try container.decodeIfPresent(Int.self, forKey: .totalTasksCount)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
 
@@ -42,6 +101,75 @@ struct Goal: Codable, Identifiable, Equatable {
 
     static func == (lhs: Goal, rhs: Goal) -> Bool {
         lhs.id == rhs.id
+    }
+
+    // MARK: - Computed Properties
+
+    var statusEmoji: String {
+        switch status {
+        case "done", "completed": return "✅"
+        case "archived", "paused": return "📦"
+        case "in_progress": return "🔄"
+        default: return "🎯"
+        }
+    }
+
+    var goalTypeEmoji: String {
+        switch goalType {
+        case "habit": return "🔁"
+        case "milestone": return "📊"
+        default: return "🎯"
+        }
+    }
+
+    var goalTypeLabel: String {
+        switch goalType {
+        case "habit": return "Habit"
+        case "milestone": return "Milestone"
+        default: return "One-time"
+        }
+    }
+
+    var assignmentEmoji: String {
+        switch assignmentType {
+        case "family": return "👨‍👩‍👧‍👦"
+        case "parents": return "👫"
+        case "kids": return "👧"
+        case "individual": return "👤"
+        default: return "👨‍👩‍👧‍👦"
+        }
+    }
+
+    var assignmentLabel: String {
+        switch assignmentType {
+        case "family": return "Entire Family"
+        case "parents": return "Parents Only"
+        case "kids": return "All Kids"
+        case "individual": return "Individual"
+        default: return "Entire Family"
+        }
+    }
+
+    var rewardEmoji: String {
+        switch rewardType {
+        case "sticker": return "⭐"
+        case "points": return "🏆"
+        case "treat": return "🍪"
+        case "outing": return "🎉"
+        case "custom": return "🎁"
+        default: return "🎁"
+        }
+    }
+
+    var rewardLabel: String {
+        switch rewardType {
+        case "sticker": return "Sticker"
+        case "points": return "Points"
+        case "treat": return "Special Treat"
+        case "outing": return "Fun Outing"
+        case "custom": return rewardCustom ?? "Custom Reward"
+        default: return "Reward"
+        }
     }
 }
 
@@ -58,6 +186,7 @@ struct GoalTask: Codable, Identifiable, Equatable {
     let assignedTo: String?
     let goalId: Int?
     let listName: String?
+    let countTowardGoal: Bool?
     let createdAt: String?
     let updatedAt: String?
 
@@ -70,12 +199,21 @@ struct GoalTask: Codable, Identifiable, Equatable {
         case assignedTo = "assigned_to"
         case goalId = "goal_id"
         case listName = "list_name"
+        case countTowardGoal = "count_toward_goal"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
 
     static func == (lhs: GoalTask, rhs: GoalTask) -> Bool {
         lhs.id == rhs.id
+    }
+
+    var isCompleted: Bool {
+        status == "completed"
+    }
+
+    var isOpen: Bool {
+        status == "open" || status == "in_progress"
     }
 }
 
@@ -94,7 +232,7 @@ struct GoalsResponse: Codable {
 
 struct GoalDetailResponse: Codable {
     let goal: Goal
-    let tasks: [GoalTask]?
+    let tasks: [GoalTask]
     let milestones: [Milestone]?
 }
 
@@ -106,4 +244,49 @@ struct Milestone: Codable {
 
 struct TaskDetailResponse: Codable {
     let task: GoalTask
+}
+
+// MARK: - Goal Template
+
+struct GoalTemplate: Identifiable {
+    let id: Int
+    let title: String
+    let description: String?
+    let emoji: String
+    let category: String
+    let goalType: String
+    let habitFrequency: String?
+    let milestoneTarget: Int?
+    let milestoneUnit: String?
+    let isKidGoal: Bool
+    let suggestedReward: Bool
+    let rewardType: String?
+
+    init(
+        id: Int,
+        title: String,
+        description: String? = nil,
+        emoji: String,
+        category: String,
+        goalType: String,
+        habitFrequency: String? = nil,
+        milestoneTarget: Int? = nil,
+        milestoneUnit: String? = nil,
+        isKidGoal: Bool = false,
+        suggestedReward: Bool = false,
+        rewardType: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.emoji = emoji
+        self.category = category
+        self.goalType = goalType
+        self.habitFrequency = habitFrequency
+        self.milestoneTarget = milestoneTarget
+        self.milestoneUnit = milestoneUnit
+        self.isKidGoal = isKidGoal
+        self.suggestedReward = suggestedReward
+        self.rewardType = rewardType
+    }
 }

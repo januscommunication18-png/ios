@@ -6,7 +6,15 @@ struct MemberDetailView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(AppRouter.self) private var router
+    @Environment(\.dismiss) private var dismiss
     @State private var viewModel = FamilyViewModel()
+    @State private var showingEditSheet = false
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeleting = false
+
+    // Emergency contact delete confirmation
+    @State private var showingDeleteContactConfirmation = false
+    @State private var contactToDelete: MemberContact?
 
     var body: some View {
         Group {
@@ -25,9 +33,116 @@ struct MemberDetailView: View {
         }
         .navigationTitle(viewModel.selectedMember?.fullName ?? "Member")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingEditSheet = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .foregroundColor(.blue)
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingDeleteConfirmation = true
+                } label: {
+                    if isDeleting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                }
+                .disabled(isDeleting)
+            }
+        }
+        .sheet(isPresented: $showingEditSheet) {
+            if let member = viewModel.selectedMember {
+                EditFamilyMemberView(
+                    circleId: circleId,
+                    member: memberToBasic(member)
+                ) {
+                    // Refresh member after editing
+                    Task {
+                        await viewModel.loadMember(circleId: circleId, memberId: memberId)
+                    }
+                }
+            }
+        }
+        .alert("Delete Member", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task {
+                    await deleteMember()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete \(viewModel.selectedMember?.displayName ?? "this member")? This action cannot be undone.")
+        }
+        .alert("Delete Contact", isPresented: $showingDeleteContactConfirmation) {
+            Button("Cancel", role: .cancel) {
+                contactToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let contact = contactToDelete {
+                    Task {
+                        await deleteEmergencyContact(contact)
+                    }
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete \(contactToDelete?.name ?? "this contact")?")
+        }
         .task {
             await viewModel.loadMember(circleId: circleId, memberId: memberId)
         }
+    }
+
+    private func deleteMember() async {
+        isDeleting = true
+        let success = await viewModel.deleteMember(circleId: circleId, memberId: memberId)
+        isDeleting = false
+
+        if success {
+            dismiss()
+        }
+    }
+
+    private func deleteEmergencyContact(_ contact: MemberContact) async {
+        let success = await viewModel.deleteEmergencyContact(
+            circleId: circleId,
+            memberId: memberId,
+            contactId: contact.id
+        )
+
+        if success {
+            await viewModel.loadMember(circleId: circleId, memberId: memberId)
+        }
+        contactToDelete = nil
+    }
+
+    private func memberToBasic(_ member: FamilyMember) -> FamilyMemberBasic {
+        FamilyMemberBasic(
+            id: member.id,
+            firstName: member.firstName,
+            lastName: member.lastName,
+            fullName: member.fullName,
+            email: member.email,
+            phone: member.phone,
+            dateOfBirth: member.dateOfBirth,
+            age: member.age,
+            relationship: member.relationship,
+            relationshipName: member.relationshipName,
+            isMinor: member.isMinor,
+            profileImageUrl: member.profileImageUrl,
+            immigrationStatus: member.immigrationStatus,
+            immigrationStatusName: member.immigrationStatusName,
+            coParentingEnabled: member.coParentingEnabled,
+            createdAt: member.createdAt,
+            updatedAt: member.updatedAt,
+            documentsCount: member.documentsCount
+        )
     }
 
     private func memberContent(member: FamilyMember) -> some View {
@@ -234,18 +349,14 @@ struct MemberDetailView: View {
 
                 Spacer()
 
-                Button {
-                    router.navigate(to: .documents)
-                } label: {
-                    Text("View All")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(AppColors.family)
-                }
+                Text("Tap to edit")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppColors.textTertiary)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 Button {
-                    router.navigate(to: .memberDriversLicense(circleId: circleId, memberId: memberId, document: member.driversLicense))
+                    router.navigate(to: .editDriversLicense(circleId: circleId, memberId: memberId, document: member.driversLicense))
                 } label: {
                     DocumentCard(
                         icon: "🪪",
@@ -257,7 +368,7 @@ struct MemberDetailView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    router.navigate(to: .memberPassport(circleId: circleId, memberId: memberId, document: member.passport))
+                    router.navigate(to: .editPassport(circleId: circleId, memberId: memberId, document: member.passport))
                 } label: {
                     DocumentCard(
                         icon: "📘",
@@ -269,7 +380,7 @@ struct MemberDetailView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    router.navigate(to: .memberSocialSecurity(circleId: circleId, memberId: memberId, document: member.socialSecurity))
+                    router.navigate(to: .editSocialSecurity(circleId: circleId, memberId: memberId, document: member.socialSecurity))
                 } label: {
                     DocumentCard(
                         icon: "🔒",
@@ -282,7 +393,7 @@ struct MemberDetailView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    router.navigate(to: .memberBirthCertificate(circleId: circleId, memberId: memberId, document: member.birthCertificate))
+                    router.navigate(to: .editBirthCertificate(circleId: circleId, memberId: memberId, document: member.birthCertificate))
                 } label: {
                     DocumentCard(
                         icon: "📄",
@@ -315,6 +426,16 @@ struct MemberDetailView: View {
                 Text("Health & Medical")
                     .font(AppTypography.headline)
                     .foregroundColor(AppColors.textPrimary)
+
+                Spacer()
+
+                Button {
+                    router.navigate(to: .memberMedicalInfo(circleId: circleId, memberId: memberId))
+                } label: {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(AppColors.family)
+                }
             }
 
             VStack(alignment: .leading, spacing: 16) {
@@ -437,11 +558,25 @@ struct MemberDetailView: View {
                    (member.allergies?.isEmpty ?? true) &&
                    (member.medicalConditions?.isEmpty ?? true) &&
                    (member.healthcareProviders?.isEmpty ?? true) {
-                    Text("No medical information on file")
-                        .font(AppTypography.bodyMedium)
-                        .foregroundColor(AppColors.textTertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
+                    VStack(spacing: 12) {
+                        Text("No medical information on file")
+                            .font(AppTypography.bodyMedium)
+                            .foregroundColor(AppColors.textTertiary)
+
+                        Button {
+                            router.navigate(to: .memberMedicalInfo(circleId: circleId, memberId: memberId))
+                        } label: {
+                            Label("Add Medical Info", systemImage: "plus")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(AppColors.family)
+                                .cornerRadius(8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
                 }
             }
             .padding()
@@ -471,18 +606,51 @@ struct MemberDetailView: View {
                 Text("Emergency Contacts")
                     .font(AppTypography.headline)
                     .foregroundColor(AppColors.textPrimary)
+
+                Spacer()
+
+                Button {
+                    router.navigate(to: .addEmergencyContact(circleId: circleId, memberId: memberId))
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(AppColors.family)
+                }
             }
 
             VStack(alignment: .leading, spacing: 12) {
                 if member.emergencyContacts.isEmpty {
-                    Text("No emergency contacts on file")
-                        .font(AppTypography.bodyMedium)
-                        .foregroundColor(AppColors.textTertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
+                    VStack(spacing: 12) {
+                        Text("No emergency contacts on file")
+                            .font(AppTypography.bodyMedium)
+                            .foregroundColor(AppColors.textTertiary)
+
+                        Button {
+                            router.navigate(to: .addEmergencyContact(circleId: circleId, memberId: memberId))
+                        } label: {
+                            Label("Add Emergency Contact", systemImage: "plus")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(AppColors.family)
+                                .cornerRadius(8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
                 } else {
                     ForEach(member.emergencyContacts) { contact in
-                        EmergencyContactRow(contact: contact)
+                        EditableEmergencyContactRow(
+                            contact: contact,
+                            onEdit: {
+                                router.navigate(to: .editEmergencyContact(circleId: circleId, memberId: memberId, contact: contact))
+                            },
+                            onDelete: {
+                                contactToDelete = contact
+                                showingDeleteContactConfirmation = true
+                            }
+                        )
                     }
                 }
             }
@@ -764,6 +932,70 @@ struct EmergencyContactRow: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Editable Emergency Contact Row
+
+struct EditableEmergencyContactRow: View {
+    let contact: MemberContact
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(AppColors.warning)
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(contact.name ?? "Unknown")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(AppColors.textPrimary)
+
+                if let phone = contact.phone {
+                    Button {
+                        if let url = URL(string: "tel:\(phone)") {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Text(phone)
+                            .font(AppTypography.bodyMedium)
+                            .foregroundColor(AppColors.family)
+                    }
+                }
+
+                if let relationship = contact.relationship {
+                    Text(relationship.capitalized)
+                        .font(AppTypography.captionSmall)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 16))
+                        .foregroundColor(AppColors.family)
+                        .frame(width: 32, height: 32)
+                        .background(AppColors.family.opacity(0.1))
+                        .cornerRadius(8)
+                }
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 16))
+                        .foregroundColor(AppColors.error)
+                        .frame(width: 32, height: 32)
+                        .background(AppColors.error.opacity(0.1))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

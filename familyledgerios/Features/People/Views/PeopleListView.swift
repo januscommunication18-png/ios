@@ -804,7 +804,13 @@ struct CreatePersonView: View {
     var body: some View {
         Form {
             TextField("First Name", text: $firstName)
+                .onChange(of: firstName) { _, newValue in
+                    firstName = newValue.filter { !$0.isNumber }
+                }
             TextField("Last Name", text: $lastName)
+                .onChange(of: lastName) { _, newValue in
+                    lastName = newValue.filter { !$0.isNumber }
+                }
         }
         .navigationTitle("New Contact")
         .toolbar {

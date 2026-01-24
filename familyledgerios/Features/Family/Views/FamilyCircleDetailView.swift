@@ -25,6 +25,7 @@ struct FamilyCircleDetailView: View {
     @Environment(AppRouter.self) private var router
     @State private var viewModel = FamilyViewModel()
     @State private var selectedTab: FamilyCircleTab = .members
+    @State private var showingAddMember = false
 
     var body: some View {
         Group {
@@ -42,6 +43,26 @@ struct FamilyCircleDetailView: View {
         }
         .navigationTitle(viewModel.selectedCircle?.name ?? "Family Circle")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingAddMember = true
+                } label: {
+                    Image(systemName: "person.badge.plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddMember) {
+            AddFamilyMemberView(
+                circleId: circleId,
+                circleName: viewModel.selectedCircle?.name ?? "Family Circle"
+            ) {
+                // Refresh members after adding
+                Task {
+                    await viewModel.loadCircle(id: circleId)
+                }
+            }
+        }
         .refreshable {
             await refreshCurrentTab()
         }
@@ -530,6 +551,7 @@ struct SmallBadge: View {
             .cornerRadius(6)
     }
 }
+
 
 // MARK: - Family Member Card
 

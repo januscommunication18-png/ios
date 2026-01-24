@@ -107,6 +107,18 @@ struct FamilyCirclesResponse: Codable {
     }
 }
 
+struct CreateFamilyCircleRequest: Encodable {
+    let name: String
+    let description: String?
+    let includeMe: Bool
+    let photo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, photo
+        case includeMe = "include_me"
+    }
+}
+
 struct FamilyCircleDetailResponse: Codable {
     let familyCircle: FamilyCircle
 
@@ -118,6 +130,53 @@ struct FamilyCircleDetailResponse: Codable {
 struct FamilyMembersResponse: Codable {
     let members: [FamilyMemberBasic]?
     let total: Int?
+}
+
+struct CreateFamilyMemberRequest: Encodable {
+    let firstName: String
+    let lastName: String
+    let email: String?
+    let phone: String?
+    let phoneCountryCode: String?
+    let dateOfBirth: String
+    let relationship: String
+    let fatherName: String?
+    let motherName: String?
+    let isMinor: Bool
+    let coParentingEnabled: Bool
+    let immigrationStatus: String?
+    let profileImage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case email, phone, relationship
+        case firstName = "first_name"
+        case lastName = "last_name"
+        case phoneCountryCode = "phone_country_code"
+        case dateOfBirth = "date_of_birth"
+        case fatherName = "father_name"
+        case motherName = "mother_name"
+        case isMinor = "is_minor"
+        case coParentingEnabled = "co_parenting_enabled"
+        case immigrationStatus = "immigration_status"
+        case profileImage = "profile_image"
+    }
+}
+
+struct CreateFamilyMemberResponse: Codable {
+    let member: FamilyMemberBasic?
+    let message: String?
+}
+
+struct RelationshipsResponse: Codable {
+    let relationships: [String: String]
+}
+
+struct ImmigrationStatusesResponse: Codable {
+    let immigrationStatuses: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case immigrationStatuses = "immigration_statuses"
+    }
 }
 
 struct FamilyMember: Codable, Identifiable, Equatable {
@@ -157,9 +216,10 @@ struct FamilyMember: Codable, Identifiable, Equatable {
     var medicalConditions: [MedicalCondition]?
     var healthcareProviders: [HealthcareProvider]?
     var medications: [FamilyMemberMedication]?
+    var vaccinations: [MemberVaccination]?
 
     enum CodingKeys: String, CodingKey {
-        case id, email, phone, age, relationship, contacts, allergies, medications
+        case id, email, phone, age, relationship, contacts, allergies, medications, vaccinations
         case firstName = "first_name"
         case lastName = "last_name"
         case fullName = "full_name"
@@ -218,6 +278,7 @@ struct FamilyMember: Codable, Identifiable, Equatable {
         medicalConditions = try? container.decodeIfPresent([MedicalCondition].self, forKey: .medicalConditions)
         healthcareProviders = try? container.decodeIfPresent([HealthcareProvider].self, forKey: .healthcareProviders)
         medications = try? container.decodeIfPresent([FamilyMemberMedication].self, forKey: .medications)
+        vaccinations = try? container.decodeIfPresent([MemberVaccination].self, forKey: .vaccinations)
     }
 
     var displayName: String {
@@ -290,7 +351,7 @@ struct FamilyMemberDetailResponse: Codable {
 
 // MARK: - Medical Info
 
-struct MedicalInfo: Codable {
+struct MedicalInfo: Codable, Hashable {
     let bloodType: String?
     let insuranceProvider: String?
     let insurancePolicyNumber: String?
@@ -332,17 +393,21 @@ struct MedicalInfo: Codable {
 
 // MARK: - Member Contact
 
-struct MemberContact: Codable, Identifiable {
+struct MemberContact: Codable, Identifiable, Hashable {
     let id: Int
     let name: String?
     let email: String?
     let phone: String?
     let relationship: String?
+    let relationshipName: String?
+    let address: String?
+    let notes: String?
     let isEmergencyContact: Bool?
     let priority: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, email, phone, relationship, priority
+        case id, name, email, phone, relationship, address, notes, priority
+        case relationshipName = "relationship_name"
         case isEmergencyContact = "is_emergency_contact"
     }
 }
@@ -361,6 +426,8 @@ struct MemberDocument: Codable, Identifiable, Hashable {
     let isExpired: Bool?
     let daysUntilExpiry: Int?
     let status: String?
+    let frontImageUrl: String?
+    let backImageUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id, status
@@ -373,6 +440,8 @@ struct MemberDocument: Codable, Identifiable, Hashable {
         case expiryDate = "expiry_date"
         case isExpired = "is_expired"
         case daysUntilExpiry = "days_until_expiry"
+        case frontImageUrl = "front_image_url"
+        case backImageUrl = "back_image_url"
     }
 
     init(from decoder: Decoder) throws {
@@ -394,6 +463,8 @@ struct MemberDocument: Codable, Identifiable, Hashable {
             daysUntilExpiry = try? container.decodeIfPresent(Int.self, forKey: .daysUntilExpiry)
         }
         status = try container.decodeIfPresent(String.self, forKey: .status)
+        frontImageUrl = try container.decodeIfPresent(String.self, forKey: .frontImageUrl)
+        backImageUrl = try container.decodeIfPresent(String.self, forKey: .backImageUrl)
     }
 }
 
@@ -460,5 +531,38 @@ struct FamilyMemberMedication: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, name, dosage, frequency
         case isActive = "is_active"
+    }
+}
+
+// MARK: - Member Vaccination
+
+struct MemberVaccination: Codable, Identifiable {
+    let id: Int
+    let vaccineType: String?
+    let vaccineName: String?
+    let customVaccineName: String?
+    let vaccinationDate: String?
+    let nextVaccinationDate: String?
+    let administeredBy: String?
+    let lotNumber: String?
+    let notes: String?
+    let isDue: Bool?
+    let isComingSoon: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, notes
+        case vaccineType = "vaccine_type"
+        case vaccineName = "vaccine_name"
+        case customVaccineName = "custom_vaccine_name"
+        case vaccinationDate = "vaccination_date"
+        case nextVaccinationDate = "next_vaccination_date"
+        case administeredBy = "administered_by"
+        case lotNumber = "lot_number"
+        case isDue = "is_due"
+        case isComingSoon = "is_coming_soon"
+    }
+
+    var displayName: String {
+        vaccineName ?? customVaccineName ?? vaccineType ?? "Unknown"
     }
 }

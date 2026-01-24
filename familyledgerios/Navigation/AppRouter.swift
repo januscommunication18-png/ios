@@ -10,13 +10,14 @@ enum AppRoute: Hashable {
     case expense(id: Int)
     case createExpense
     case budget(id: Int)
+    case createBudget
 
     // Goals & Tasks
     case goals
     case goal(id: Int)
     case createGoal
     case task(id: Int)
-    case createTask
+    case createTask(goalId: Int? = nil)
 
     // Journal
     case journal
@@ -47,12 +48,28 @@ enum AppRoute: Hashable {
     case documents
     case insurancePolicy(id: Int)
     case taxReturn(id: Int)
+    case createInsurancePolicy
+    case createTaxReturn
 
-    // Member Documents
+    // Member Documents - View
     case memberDriversLicense(circleId: Int, memberId: Int, document: MemberDocument?)
     case memberPassport(circleId: Int, memberId: Int, document: MemberDocument?)
     case memberSocialSecurity(circleId: Int, memberId: Int, document: MemberDocument?)
     case memberBirthCertificate(circleId: Int, memberId: Int, document: MemberDocument?)
+
+    // Member Documents - Edit/Create
+    case editDriversLicense(circleId: Int, memberId: Int, document: MemberDocument?)
+    case editPassport(circleId: Int, memberId: Int, document: MemberDocument?)
+    case editSocialSecurity(circleId: Int, memberId: Int, document: MemberDocument?)
+    case editBirthCertificate(circleId: Int, memberId: Int, document: MemberDocument?)
+
+    // Member Medical & Emergency Contacts - Edit
+    case editMedicalInfo(circleId: Int, memberId: Int, medicalInfo: MedicalInfo?)
+    case editEmergencyContact(circleId: Int, memberId: Int, contact: MemberContact?)
+    case addEmergencyContact(circleId: Int, memberId: Int)
+
+    // Member Health & Medical (comprehensive view)
+    case memberMedicalInfo(circleId: Int, memberId: Int)
 
     // Resources
     case resources

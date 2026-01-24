@@ -23,9 +23,6 @@ struct DashboardView: View {
                         remindersWidget
                     }
 
-                    // Quick Actions
-                    quickActionsSection
-
                     // Features Grid
                     featuresSection
                 }
@@ -173,55 +170,6 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Quick Actions Section
-
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Actions")
-                .font(AppTypography.headline)
-                .foregroundColor(AppColors.textPrimary)
-
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible()),
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                QuickActionCard(
-                    title: "Add Member",
-                    icon: "person.badge.plus",
-                    color: AppColors.family
-                ) {
-                    // TODO: Navigate to add member
-                }
-
-                QuickActionCard(
-                    title: "Add Asset",
-                    icon: "plus.circle",
-                    color: AppColors.assets
-                ) {
-                    // TODO: Navigate to add asset
-                }
-
-                QuickActionCard(
-                    title: "Documents",
-                    icon: "doc.fill",
-                    color: AppColors.primary
-                ) {
-                    router.navigate(to: .documents)
-                }
-
-                QuickActionCard(
-                    title: "Settings",
-                    icon: "gearshape.fill",
-                    color: AppColors.textSecondary
-                ) {
-                    router.navigate(to: .settings)
-                }
-            }
-        }
-    }
-
     // MARK: - Features Section
 
     private var featuresSection: some View {
@@ -232,7 +180,16 @@ struct DashboardView: View {
 
             VStack(spacing: 12) {
                 FeatureCard(
-                    title: "Expenses",
+                    title: "Documents",
+                    subtitle: "Insurance & tax documents",
+                    icon: "doc.fill",
+                    color: AppColors.primary
+                ) {
+                    router.navigate(to: .documents)
+                }
+
+                FeatureCard(
+                    title: "Budget & Expenses",
                     subtitle: "Track and manage spending",
                     icon: "dollarsign.circle.fill",
                     color: AppColors.expenses
@@ -328,6 +285,8 @@ struct DashboardView: View {
             CreateExpenseView()
         case .budget(let id):
             BudgetDetailView(budgetId: id)
+        case .createBudget:
+            CreateBudgetView()
         case .goals:
             GoalsListView()
         case .goal(let id):
@@ -336,8 +295,8 @@ struct DashboardView: View {
             CreateGoalView()
         case .task(let id):
             TaskDetailView(taskId: id)
-        case .createTask:
-            CreateTaskView()
+        case .createTask(let goalId):
+            CreateTaskView(goalId: goalId)
         case .journal:
             JournalListView()
         case .journalEntry(let id):
@@ -374,6 +333,10 @@ struct DashboardView: View {
             InsurancePolicyDetailView(policyId: id)
         case .taxReturn(let id):
             TaxReturnDetailView(returnId: id)
+        case .createInsurancePolicy:
+            CreateInsurancePolicyView()
+        case .createTaxReturn:
+            CreateTaxReturnView()
         case .resources:
             ResourcesListView()
         case .resource(let id):
@@ -412,6 +375,28 @@ struct DashboardView: View {
             FamilyResourceDetailView(circleId: circleId, resourceId: resourceId)
         case .legalDocument(let circleId, let documentId):
             LegalDocumentDetailView(circleId: circleId, documentId: documentId)
+
+        // Document Edit/Create Routes
+        case .editDriversLicense(let circleId, let memberId, let document):
+            MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .driversLicense, existingDocument: document)
+        case .editPassport(let circleId, let memberId, let document):
+            MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .passport, existingDocument: document)
+        case .editSocialSecurity(let circleId, let memberId, let document):
+            MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .socialSecurity, existingDocument: document)
+        case .editBirthCertificate(let circleId, let memberId, let document):
+            MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .birthCertificate, existingDocument: document)
+
+        // Medical & Emergency Contact Edit Routes
+        case .editMedicalInfo(let circleId, let memberId, let medicalInfo):
+            MemberMedicalEditView(circleId: circleId, memberId: memberId, existingMedicalInfo: medicalInfo)
+        case .editEmergencyContact(let circleId, let memberId, let contact):
+            MemberEmergencyContactEditView(circleId: circleId, memberId: memberId, existingContact: contact)
+        case .addEmergencyContact(let circleId, let memberId):
+            MemberEmergencyContactEditView(circleId: circleId, memberId: memberId, existingContact: nil)
+
+        // Member Medical Info (comprehensive view)
+        case .memberMedicalInfo(let circleId, let memberId):
+            MemberMedicalInfoView(circleId: circleId, memberId: memberId)
         }
     }
 }

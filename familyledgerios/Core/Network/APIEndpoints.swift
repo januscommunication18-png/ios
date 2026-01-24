@@ -11,6 +11,7 @@ enum HTTPMethod: String {
 enum APIEndpoint {
     // MARK: - Auth
     case login
+    case register
     case otpRequest
     case otpVerify
     case otpResend
@@ -27,11 +28,43 @@ enum APIEndpoint {
 
     // MARK: - Family Circles
     case familyCircles
+    case createFamilyCircle
     case familyCircle(id: Int)
     case familyCircleMembers(circleId: Int)
+    case createFamilyCircleMember(circleId: Int)
     case familyCircleMember(circleId: Int, memberId: Int)
+    case updateFamilyCircleMember(circleId: Int, memberId: Int)
+    case deleteFamilyCircleMember(circleId: Int, memberId: Int)
     case familyCircleResources(circleId: Int)
     case familyCircleLegalDocuments(circleId: Int)
+    case familyMembers
+    case familyMemberRelationships
+    case familyMemberImmigrationStatuses
+    case familyMemberBloodTypes
+
+    // MARK: - Member Documents & Medical
+    case createMemberDocument(circleId: Int, memberId: Int)
+    case updateMemberDocument(circleId: Int, memberId: Int, documentId: Int)
+    case deleteMemberDocument(circleId: Int, memberId: Int, documentId: Int)
+    case updateMemberMedicalInfo(circleId: Int, memberId: Int)
+    case createMemberAllergy(circleId: Int, memberId: Int)
+    case updateMemberAllergy(circleId: Int, memberId: Int, allergyId: Int)
+    case deleteMemberAllergy(circleId: Int, memberId: Int, allergyId: Int)
+    case createMemberMedication(circleId: Int, memberId: Int)
+    case updateMemberMedication(circleId: Int, memberId: Int, medicationId: Int)
+    case deleteMemberMedication(circleId: Int, memberId: Int, medicationId: Int)
+    case createMemberEmergencyContact(circleId: Int, memberId: Int)
+    case updateMemberEmergencyContact(circleId: Int, memberId: Int, contactId: Int)
+    case deleteMemberEmergencyContact(circleId: Int, memberId: Int, contactId: Int)
+    case createMemberCondition(circleId: Int, memberId: Int)
+    case updateMemberCondition(circleId: Int, memberId: Int, conditionId: Int)
+    case deleteMemberCondition(circleId: Int, memberId: Int, conditionId: Int)
+    case createMemberProvider(circleId: Int, memberId: Int)
+    case updateMemberProvider(circleId: Int, memberId: Int, providerId: Int)
+    case deleteMemberProvider(circleId: Int, memberId: Int, providerId: Int)
+    case createMemberVaccination(circleId: Int, memberId: Int)
+    case updateMemberVaccination(circleId: Int, memberId: Int, vaccinationId: Int)
+    case deleteMemberVaccination(circleId: Int, memberId: Int, vaccinationId: Int)
 
     // MARK: - Expenses
     case expenses
@@ -45,6 +78,7 @@ enum APIEndpoint {
     // MARK: - Budgets
     case budgets
     case budget(id: Int)
+    case createBudget
 
     // MARK: - Assets
     case assets
@@ -163,11 +197,14 @@ enum APIEndpoint {
 
     // MARK: - Onboarding
     case updateOnboarding
+    case saveOnboardingStep(step: Int)
+    case completeOnboarding
 
     var path: String {
         switch self {
         // Auth
         case .login: return "/auth/login"
+        case .register: return "/auth/register"
         case .otpRequest: return "/auth/otp/request"
         case .otpVerify: return "/auth/otp/verify"
         case .otpResend: return "/auth/otp/resend"
@@ -184,11 +221,42 @@ enum APIEndpoint {
 
         // Family Circles
         case .familyCircles: return "/family-circles"
+        case .createFamilyCircle: return "/family-circles"
         case .familyCircle(let id): return "/family-circles/\(id)"
-        case .familyCircleMembers(let circleId): return "/family-circles/\(circleId)/members"
-        case .familyCircleMember(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)"
+        case .familyCircleMembers(let circleId), .createFamilyCircleMember(let circleId): return "/family-circles/\(circleId)/members"
+        case .familyCircleMember(let circleId, let memberId),
+             .updateFamilyCircleMember(let circleId, let memberId),
+             .deleteFamilyCircleMember(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)"
         case .familyCircleResources(let circleId): return "/family-circles/\(circleId)/resources"
         case .familyCircleLegalDocuments(let circleId): return "/family-circles/\(circleId)/legal-documents"
+        case .familyMembers: return "/family-members"
+        case .familyMemberRelationships: return "/family-members/relationships"
+        case .familyMemberImmigrationStatuses: return "/family-members/immigration-statuses"
+        case .familyMemberBloodTypes: return "/family-members/blood-types"
+
+        // Member Documents & Medical
+        case .createMemberDocument(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/documents"
+        case .updateMemberDocument(let circleId, let memberId, let documentId),
+             .deleteMemberDocument(let circleId, let memberId, let documentId): return "/family-circles/\(circleId)/members/\(memberId)/documents/\(documentId)"
+        case .updateMemberMedicalInfo(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/medical-info"
+        case .createMemberAllergy(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/allergies"
+        case .updateMemberAllergy(let circleId, let memberId, let allergyId),
+             .deleteMemberAllergy(let circleId, let memberId, let allergyId): return "/family-circles/\(circleId)/members/\(memberId)/allergies/\(allergyId)"
+        case .createMemberMedication(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/medications"
+        case .updateMemberMedication(let circleId, let memberId, let medicationId),
+             .deleteMemberMedication(let circleId, let memberId, let medicationId): return "/family-circles/\(circleId)/members/\(memberId)/medications/\(medicationId)"
+        case .createMemberEmergencyContact(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/emergency-contacts"
+        case .updateMemberEmergencyContact(let circleId, let memberId, let contactId),
+             .deleteMemberEmergencyContact(let circleId, let memberId, let contactId): return "/family-circles/\(circleId)/members/\(memberId)/emergency-contacts/\(contactId)"
+        case .createMemberCondition(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/conditions"
+        case .updateMemberCondition(let circleId, let memberId, let conditionId),
+             .deleteMemberCondition(let circleId, let memberId, let conditionId): return "/family-circles/\(circleId)/members/\(memberId)/conditions/\(conditionId)"
+        case .createMemberProvider(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/providers"
+        case .updateMemberProvider(let circleId, let memberId, let providerId),
+             .deleteMemberProvider(let circleId, let memberId, let providerId): return "/family-circles/\(circleId)/members/\(memberId)/providers/\(providerId)"
+        case .createMemberVaccination(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/vaccinations"
+        case .updateMemberVaccination(let circleId, let memberId, let vaccinationId),
+             .deleteMemberVaccination(let circleId, let memberId, let vaccinationId): return "/family-circles/\(circleId)/members/\(memberId)/vaccinations/\(vaccinationId)"
 
         // Expenses
         case .expenses, .createExpense: return "/expenses"
@@ -197,7 +265,7 @@ enum APIEndpoint {
         case .settleExpense(let id): return "/expenses/\(id)/settle"
 
         // Budgets
-        case .budgets: return "/budgets"
+        case .budgets, .createBudget: return "/budgets"
         case .budget(let id): return "/budgets/\(id)"
 
         // Assets
@@ -283,6 +351,8 @@ enum APIEndpoint {
 
         // Onboarding
         case .updateOnboarding: return "/onboarding"
+        case .saveOnboardingStep(let step): return "/onboarding/step/\(step)"
+        case .completeOnboarding: return "/onboarding/complete"
         }
     }
 
@@ -292,6 +362,7 @@ enum APIEndpoint {
         case .getUser, .dashboard, .dashboardStats,
              .familyCircles, .familyCircle, .familyCircleMembers, .familyCircleMember,
              .familyCircleResources, .familyCircleLegalDocuments,
+             .familyMembers, .familyMemberRelationships, .familyMemberImmigrationStatuses, .familyMemberBloodTypes,
              .expenses, .expense, .expenseCategories,
              .budgets, .budget,
              .assets, .assetsByCategory, .asset,
@@ -311,9 +382,11 @@ enum APIEndpoint {
             return .GET
 
         // POST requests
-        case .login, .otpRequest, .otpVerify, .otpResend, .logout, .refreshToken,
+        case .login, .register, .otpRequest, .otpVerify, .otpResend, .logout, .refreshToken,
              .forgotPassword, .resetPassword, .resendResetCode,
+             .createFamilyCircle, .createFamilyCircleMember,
              .createExpense, .settleExpense,
+             .createBudget,
              .createGoal, .goalProgress, .pauseGoal, .resumeGoal, .completeGoal,
              .createTask, .toggleTask, .snoozeTask,
              .createJournalEntry, .togglePinJournalEntry,
@@ -324,7 +397,9 @@ enum APIEndpoint {
              .createInsurancePolicy, .createTaxReturn,
              .createResource,
              .createCoparentingConversation, .sendCoparentingMessage,
-             .updateOnboarding:
+             .updateOnboarding, .saveOnboardingStep, .completeOnboarding,
+             .createMemberDocument, .createMemberAllergy, .createMemberMedication, .createMemberEmergencyContact,
+             .createMemberCondition, .createMemberProvider, .createMemberVaccination:
             return .POST
 
         // PUT requests
@@ -332,7 +407,11 @@ enum APIEndpoint {
              .updateShoppingList, .updateShoppingItem,
              .updatePet, .updateVaccination, .updateMedication,
              .updatePerson, .updateReminder,
-             .updateInsurancePolicy, .updateTaxReturn, .updateResource:
+             .updateInsurancePolicy, .updateTaxReturn, .updateResource,
+             .updateFamilyCircleMember,
+             .updateMemberDocument, .updateMemberMedicalInfo, .updateMemberAllergy,
+             .updateMemberMedication, .updateMemberEmergencyContact,
+             .updateMemberCondition, .updateMemberProvider, .updateMemberVaccination:
             return .PUT
 
         // DELETE requests
@@ -340,8 +419,24 @@ enum APIEndpoint {
              .deleteShoppingList, .deleteShoppingItem,
              .deletePet, .deleteVaccination, .deleteMedication,
              .deletePerson, .deleteReminder,
-             .deleteInsurancePolicy, .deleteTaxReturn, .deleteResource:
+             .deleteInsurancePolicy, .deleteTaxReturn, .deleteResource,
+             .deleteFamilyCircleMember,
+             .deleteMemberDocument, .deleteMemberAllergy, .deleteMemberMedication, .deleteMemberEmergencyContact,
+             .deleteMemberCondition, .deleteMemberProvider, .deleteMemberVaccination:
             return .DELETE
+        }
+    }
+
+    /// Whether this endpoint requires authentication (Bearer token)
+    var requiresAuth: Bool {
+        switch self {
+        // Public endpoints that don't require authentication
+        case .login, .register, .otpRequest, .otpVerify, .otpResend,
+             .forgotPassword, .resetPassword, .resendResetCode:
+            return false
+        // All other endpoints require authentication
+        default:
+            return true
         }
     }
 }

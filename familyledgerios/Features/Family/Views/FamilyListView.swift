@@ -4,6 +4,7 @@ struct FamilyListView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppRouter.self) private var router
     @State private var viewModel = FamilyViewModel()
+    @State private var showCreateCircle = false
 
     var body: some View {
         @Bindable var router = router
@@ -21,12 +22,30 @@ struct FamilyListView: View {
                     circlesList
                 } else {
                     EmptyStateView.noFamilyCircles {
-                        // TODO: Navigate to create circle
+                        showCreateCircle = true
                     }
                 }
             }
             .navigationTitle("Family")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showCreateCircle = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
+            }
+            .sheet(isPresented: $showCreateCircle) {
+                CreateFamilyCircleView {
+                    Task {
+                        await viewModel.refreshCircles()
+                    }
+                }
+                .environment(appState)
+            }
             .refreshable {
                 await viewModel.refreshCircles()
             }
@@ -57,6 +76,29 @@ struct FamilyListView: View {
                     FamilyResourceDetailView(circleId: circleId, resourceId: resourceId)
                 case .legalDocument(let circleId, let documentId):
                     LegalDocumentDetailView(circleId: circleId, documentId: documentId)
+
+                // Document Edit/Create Routes
+                case .editDriversLicense(let circleId, let memberId, let document):
+                    MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .driversLicense, existingDocument: document)
+                case .editPassport(let circleId, let memberId, let document):
+                    MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .passport, existingDocument: document)
+                case .editSocialSecurity(let circleId, let memberId, let document):
+                    MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .socialSecurity, existingDocument: document)
+                case .editBirthCertificate(let circleId, let memberId, let document):
+                    MemberDocumentEditView(circleId: circleId, memberId: memberId, documentType: .birthCertificate, existingDocument: document)
+
+                // Medical & Emergency Contact Edit Routes
+                case .editMedicalInfo(let circleId, let memberId, let medicalInfo):
+                    MemberMedicalEditView(circleId: circleId, memberId: memberId, existingMedicalInfo: medicalInfo)
+                case .editEmergencyContact(let circleId, let memberId, let contact):
+                    MemberEmergencyContactEditView(circleId: circleId, memberId: memberId, existingContact: contact)
+                case .addEmergencyContact(let circleId, let memberId):
+                    MemberEmergencyContactEditView(circleId: circleId, memberId: memberId, existingContact: nil)
+
+                // Member Medical Info (comprehensive view)
+                case .memberMedicalInfo(let circleId, let memberId):
+                    MemberMedicalInfoView(circleId: circleId, memberId: memberId)
+
                 default:
                     EmptyView()
                 }

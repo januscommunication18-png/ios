@@ -5,9 +5,9 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleDisplayName</key>
-	<string>Family Ledger</string>
+	<string>Meet Olliee</string>
 	<key>CFBundleName</key>
-	<string>Family Ledger</string>
+	<string>Meet Olliee</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
@@ -18,6 +18,8 @@
 	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

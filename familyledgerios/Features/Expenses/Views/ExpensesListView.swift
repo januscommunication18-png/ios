@@ -12,12 +12,12 @@ struct ExpensesListView: View {
                 expensesContent
             }
         }
-        .navigationTitle("Expenses")
+        .navigationTitle("Budgets")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    router.navigate(to: .createExpense)
+                    router.navigate(to: .createBudget)
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -35,26 +35,45 @@ struct ExpensesListView: View {
     private var expensesContent: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Budget Summary Section
-                budgetSummarySection
-
-                // Overall Progress Bar
-                if let stats = viewModel.stats {
-                    overallProgressBar(stats: stats)
-                }
-
                 // My Budgets Section
                 if !viewModel.budgets.isEmpty {
                     myBudgetsSection
+                } else {
+                    // Empty state when no budgets
+                    VStack(spacing: 16) {
+                        Text("💰")
+                            .font(.system(size: 64))
+
+                        Text("No Budgets Yet")
+                            .font(AppTypography.headline)
+                            .foregroundColor(AppColors.textPrimary)
+
+                        Text("Create your first budget to start tracking expenses")
+                            .font(AppTypography.bodyMedium)
+                            .foregroundColor(AppColors.textSecondary)
+                            .multilineTextAlignment(.center)
+
+                        Button {
+                            router.navigate(to: .createBudget)
+                        } label: {
+                            Text("Create Budget")
+                                .font(AppTypography.bodyMedium)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(AppColors.primary)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(48)
                 }
 
                 // Spending by Category Section
                 if !viewModel.spendingByCategory.isEmpty {
                     spendingByCategorySection
                 }
-
-                // Recent Expenses Section
-                recentExpensesSection
             }
             .padding()
         }
