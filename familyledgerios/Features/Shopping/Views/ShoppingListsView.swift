@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 
 struct AddShoppingItemRequest: Encodable {
@@ -18,6 +19,10 @@ final class ShoppingViewModel {
     var isLoading = false
     var isRefreshing = false
     var errorMessage: String?
+
+    // Offline state
+    var isOffline: Bool { !NetworkMonitor.shared.isConnected }
+    var hasPendingChanges: Bool { OutboxManager.shared.pendingCount > 0 }
 
     // Form fields for adding items
     var newItemName = ""
@@ -41,11 +46,32 @@ final class ShoppingViewModel {
     @MainActor
     func loadLists() async {
         isLoading = lists.isEmpty
+
+        // Try to load from cache first if offline
+        if isOffline {
+            loadListsFromCache()
+            isLoading = false
+            return
+        }
+
+        // Sync pending changes first when online
+        await SyncManager.shared.syncIfNeeded()
+
         do {
             let response: ShoppingListsResponse = try await APIClient.shared.request(.shoppingLists)
-            lists = response.lists ?? []
+            var serverLists = response.lists ?? []
+            // Cache the lists
+            cacheListsToLocal(serverLists)
+            // Merge with any local-only lists that haven't synced yet
+            let pendingLists = getPendingLocalLists()
+            serverLists.append(contentsOf: pendingLists)
+            lists = serverLists
         } catch {
-            errorMessage = "Failed to load lists"
+            // Fall back to cache on error
+            loadListsFromCache()
+            if lists.isEmpty {
+                errorMessage = "Failed to load lists"
+            }
         }
         isLoading = false
     }
@@ -53,30 +79,95 @@ final class ShoppingViewModel {
     @MainActor
     func refreshLists() async {
         isRefreshing = true
+
+        // Sync pending changes first if online
+        if !isOffline {
+            await SyncManager.shared.syncIfNeeded()
+        }
+
         do {
             let response: ShoppingListsResponse = try await APIClient.shared.request(.shoppingLists)
-            lists = response.lists ?? []
-        } catch { }
+            var serverLists = response.lists ?? []
+            cacheListsToLocal(serverLists)
+            // Merge with any local-only lists that haven't synced yet
+            let pendingLists = getPendingLocalLists()
+            serverLists.append(contentsOf: pendingLists)
+            lists = serverLists
+        } catch {
+            loadListsFromCache()
+        }
         isRefreshing = false
+    }
+
+    /// Get locally-created lists that haven't been synced to server yet
+    @MainActor
+    private func getPendingLocalLists() -> [ShoppingList] {
+        let context = OfflineDataContainer.shared.context
+        let pendingCreateStatus = SyncStatus.pendingCreate.rawValue
+        let descriptor = FetchDescriptor<CachedShoppingList>(
+            predicate: #Predicate<CachedShoppingList> { cached in
+                cached.syncStatus == pendingCreateStatus
+            }
+        )
+
+        guard let pendingCached = try? context.fetch(descriptor) else { return [] }
+
+        return pendingCached.map { cached in
+            let displayId = -abs(cached.localId.hashValue)
+            return ShoppingList(
+                id: displayId,
+                name: cached.name,
+                description: cached.listDescription,
+                storeName: cached.storeName,
+                color: cached.color,
+                icon: cached.icon,
+                isDefault: cached.isDefault,
+                itemsCount: cached.itemsCount,
+                purchasedCount: cached.purchasedCount,
+                uncheckedCount: cached.uncheckedCount,
+                localId: cached.localId
+            )
+        }
     }
 
     @MainActor
     func loadList(id: Int) async {
         isLoading = true
         errorMessage = nil
+
+        // If ID is negative, this is an offline-created list - load from cache only
+        if id < 0 {
+            if let cached = loadListFromCache(serverId: id) {
+                selectedList = cached
+            } else {
+                errorMessage = "List not found"
+            }
+            isLoading = false
+            return
+        }
+
+        // Try cache first if offline
+        if isOffline {
+            if let cached = loadListFromCache(serverId: id) {
+                selectedList = cached
+                isLoading = false
+                return
+            }
+        }
+
         do {
             let response: ShoppingListDetailResponse = try await APIClient.shared.request(.shoppingList(id: id))
             if var list = response.list {
                 list.items = response.items
-                // Update counts from items
                 if let items = response.items {
                     list.itemsCount = items.count
                     list.purchasedCount = items.filter { $0.isChecked == true }.count
                     list.uncheckedCount = items.filter { $0.isChecked != true }.count
                 }
                 selectedList = list
+                // Cache list with items
+                cacheListDetailToLocal(list)
             } else if let items = response.items {
-                // API might return items without a list wrapper - create a minimal list
                 let list = ShoppingList(
                     id: id,
                     name: "Shopping List",
@@ -90,33 +181,50 @@ final class ShoppingViewModel {
                 errorMessage = "List not found"
             }
         } catch let error as APIError {
-            errorMessage = error.localizedDescription
+            // Try cache on error
+            if let cached = loadListFromCache(serverId: id) {
+                selectedList = cached
+            } else {
+                errorMessage = error.localizedDescription
+            }
         } catch {
-            errorMessage = "Failed to load list"
+            if let cached = loadListFromCache(serverId: id) {
+                selectedList = cached
+            } else {
+                errorMessage = "Failed to load list"
+            }
         }
         isLoading = false
     }
 
     @MainActor
     func refreshList(id: Int) async {
+        // Offline-created lists (negative ID) - just reload from cache
+        if id < 0 || isOffline {
+            if let cached = loadListFromCache(serverId: id) {
+                selectedList = cached
+            }
+            return
+        }
+
         do {
             let response: ShoppingListDetailResponse = try await APIClient.shared.request(.shoppingList(id: id))
             if var list = response.list {
                 list.items = response.items
-                // Update counts from items
                 if let items = response.items {
                     list.itemsCount = items.count
                     list.purchasedCount = items.filter { $0.isChecked == true }.count
                     list.uncheckedCount = items.filter { $0.isChecked != true }.count
                 }
                 selectedList = list
+                cacheListDetailToLocal(list)
             }
         } catch { }
     }
 
     @MainActor
     func toggleItem(listId: Int, itemId: Int) async {
-        // Optimistically update UI by toggling the item locally first
+        // Optimistically update UI
         if var list = selectedList, var items = list.items,
            let index = items.firstIndex(where: { $0.id == itemId }) {
             let item = items[index]
@@ -139,36 +247,57 @@ final class ShoppingViewModel {
             items[index] = newItem
             list.items = items
             selectedList = list
+
+            // Update cache
+            toggleItemInCache(listServerId: listId, itemServerId: itemId)
+        }
+
+        if isOffline {
+            // Queue for later sync
+            queueToggleItem(listId: listId, itemId: itemId)
+            return
         }
 
         do {
-            // API returns wrapped response, but we don't need the result
             try await APIClient.shared.requestEmpty(.toggleShoppingItem(listId: listId, itemId: itemId))
-        } catch { }
+        } catch {
+            // Queue for retry if failed
+            queueToggleItem(listId: listId, itemId: itemId)
+        }
 
-        // Refresh to sync with server
         await refreshList(id: listId)
     }
 
     @MainActor
     func addItem(listId: Int) async -> Bool {
         guard !newItemName.isEmpty else { return false }
+
+        let itemName = newItemName
+        let itemQty = newItemQuantity
+        let itemCat = newItemCategory
+
+        // Reset form immediately for better UX
+        newItemName = ""
+        newItemQuantity = 1
+
+        if isOffline {
+            // Add to cache and queue
+            addItemToCache(listServerId: listId, name: itemName, quantity: itemQty, category: itemCat)
+            return true
+        }
+
         do {
             let body = AddShoppingItemRequest(
-                name: newItemName,
-                quantity: newItemQuantity > 1 ? newItemQuantity : nil,
-                category: newItemCategory
+                name: itemName,
+                quantity: itemQty > 1 ? itemQty : nil,
+                category: itemCat
             )
-            // API returns {item: {...}} wrapped response
             let _: AddShoppingItemResponse = try await APIClient.shared.request(.addShoppingItem(listId: listId), body: body)
-            newItemName = ""
-            newItemQuantity = 1
             await refreshList(id: listId)
             return true
         } catch {
-            // Item might still be added even if decode fails - refresh to check
-            newItemName = ""
-            newItemQuantity = 1
+            // Add to cache on error
+            addItemToCache(listServerId: listId, name: itemName, quantity: itemQty, category: itemCat)
             await refreshList(id: listId)
             return true
         }
@@ -176,18 +305,383 @@ final class ShoppingViewModel {
 
     @MainActor
     func deleteItem(listId: Int, itemId: Int) async {
+        // Optimistically remove from UI
+        if var list = selectedList, var items = list.items {
+            items.removeAll { $0.id == itemId }
+            list.items = items
+            selectedList = list
+
+            // Remove from cache
+            deleteItemFromCache(listServerId: listId, itemServerId: itemId)
+        }
+
+        if isOffline {
+            queueDeleteItem(listId: listId, itemId: itemId)
+            return
+        }
+
         do {
             try await APIClient.shared.requestEmpty(.deleteShoppingItem(listId: listId, itemId: itemId))
             await refreshList(id: listId)
-        } catch { }
+        } catch {
+            queueDeleteItem(listId: listId, itemId: itemId)
+        }
     }
 
     @MainActor
     func clearChecked(listId: Int) async {
+        if isOffline {
+            // Clear checked items from cache
+            clearCheckedItemsFromCache(listServerId: listId)
+            if let cached = loadListFromCache(serverId: listId) {
+                selectedList = cached
+            }
+            return
+        }
+
         do {
             try await APIClient.shared.requestEmpty(.clearCheckedItems(listId: listId))
             await refreshList(id: listId)
         } catch { }
+    }
+
+    // MARK: - Cache Operations
+
+    @MainActor
+    private func loadListsFromCache() {
+        let context = OfflineDataContainer.shared.context
+        let deletedStatus = SyncStatus.pendingDelete.rawValue
+        let descriptor = FetchDescriptor<CachedShoppingList>(
+            predicate: #Predicate<CachedShoppingList> { cached in
+                cached.syncStatus != deletedStatus
+            },
+            sortBy: [SortDescriptor(\CachedShoppingList.localUpdatedAt, order: .reverse)]
+        )
+
+        if let cachedLists = try? context.fetch(descriptor) {
+            lists = cachedLists.map { cached in
+                // Use negative hash for offline-created lists (no server ID yet)
+                let displayId = cached.serverId ?? -abs(cached.localId.hashValue)
+                return ShoppingList(
+                    id: displayId,
+                    name: cached.name,
+                    description: cached.listDescription,
+                    storeName: cached.storeName,
+                    color: cached.color,
+                    icon: cached.icon,
+                    isDefault: cached.isDefault,
+                    itemsCount: cached.itemsCount,
+                    purchasedCount: cached.purchasedCount,
+                    uncheckedCount: cached.uncheckedCount,
+                    localId: cached.localId  // Store localId for offline lookup
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func cacheListsToLocal(_ apiLists: [ShoppingList]) {
+        let context = OfflineDataContainer.shared.context
+
+        for apiList in apiLists {
+            let serverId = apiList.id
+            let descriptor = FetchDescriptor<CachedShoppingList>(
+                predicate: #Predicate { $0.serverId == serverId }
+            )
+
+            if let existing = try? context.fetch(descriptor).first {
+                // Update existing if synced
+                if existing.currentSyncStatus == .synced {
+                    existing.name = apiList.name
+                    existing.listDescription = apiList.description
+                    existing.storeName = apiList.storeName
+                    existing.color = apiList.color
+                    existing.icon = apiList.icon
+                    existing.isDefault = apiList.isDefault ?? false
+                    existing.lastSyncedAt = Date()
+                }
+            } else {
+                // Create new
+                let cached = CachedShoppingList.from(apiList)
+                context.insert(cached)
+            }
+        }
+
+        try? context.save()
+    }
+
+    @MainActor
+    private func loadListFromCache(serverId: Int, localId: UUID? = nil) -> ShoppingList? {
+        let context = OfflineDataContainer.shared.context
+        var cached: CachedShoppingList?
+
+        // If negative ID or localId provided, search by localId
+        if serverId < 0 || localId != nil {
+            // Fetch all and filter in Swift (UUID comparisons don't work well in #Predicate)
+            let allDescriptor = FetchDescriptor<CachedShoppingList>()
+            if let allLists = try? context.fetch(allDescriptor) {
+                if let lid = localId {
+                    cached = allLists.first { $0.localId == lid }
+                } else {
+                    // Find by hash match
+                    cached = allLists.first { -abs($0.localId.hashValue) == serverId }
+                }
+            }
+        } else {
+            // Normal server ID lookup
+            let descriptor = FetchDescriptor<CachedShoppingList>(
+                predicate: #Predicate { $0.serverId == serverId }
+            )
+            cached = try? context.fetch(descriptor).first
+        }
+
+        guard let cached = cached else { return nil }
+
+        // Fetch items for this list
+        let deletedStatus = SyncStatus.pendingDelete.rawValue
+        let listLocalId = cached.localId
+        let listServerId = cached.serverId
+
+        // Items can be associated by serverId or by parent relationship
+        let allItemsDescriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate<CachedShoppingItem> { item in
+                item.syncStatus != deletedStatus
+            }
+        )
+
+        let allItems = (try? context.fetch(allItemsDescriptor)) ?? []
+        let cachedItems = allItems.filter { item in
+            // Match by serverId if available, or by parent relationship
+            if let sid = listServerId, item.shoppingListServerId == sid {
+                return true
+            }
+            // Check if parent relationship matches
+            if item.shoppingList?.localId == listLocalId {
+                return true
+            }
+            return false
+        }
+
+        let items = cachedItems.map { item in
+            ShoppingItem(
+                id: item.serverId ?? -abs(item.localId.hashValue),
+                name: item.name,
+                quantity: item.quantity,
+                unit: item.unit,
+                category: item.category,
+                isChecked: item.isChecked,
+                isPurchased: item.isChecked,
+                priceValue: item.price.map { StringOrDouble.double($0) },
+                notes: item.notes,
+                priority: item.priority
+            )
+        }
+
+        let displayId = cached.serverId ?? -abs(cached.localId.hashValue)
+        return ShoppingList(
+            id: displayId,
+            name: cached.name,
+            description: cached.listDescription,
+            storeName: cached.storeName,
+            color: cached.color,
+            icon: cached.icon,
+            isDefault: cached.isDefault,
+            itemsCount: items.count,
+            purchasedCount: items.filter { $0.isChecked == true }.count,
+            uncheckedCount: items.filter { $0.isChecked != true }.count,
+            items: items,
+            localId: cached.localId
+        )
+    }
+
+    @MainActor
+    private func cacheListDetailToLocal(_ list: ShoppingList) {
+        let context = OfflineDataContainer.shared.context
+        let serverId = list.id
+
+        // Cache list
+        let listDescriptor = FetchDescriptor<CachedShoppingList>(
+            predicate: #Predicate { $0.serverId == serverId }
+        )
+
+        let cachedList: CachedShoppingList
+        if let existing = try? context.fetch(listDescriptor).first {
+            if existing.currentSyncStatus == .synced {
+                existing.updateFromServer(list)
+            }
+            cachedList = existing
+        } else {
+            cachedList = CachedShoppingList.from(list)
+            context.insert(cachedList)
+        }
+
+        // Cache items
+        if let items = list.items {
+            for item in items {
+                let itemServerId = item.id
+                let itemDescriptor = FetchDescriptor<CachedShoppingItem>(
+                    predicate: #Predicate { $0.serverId == itemServerId }
+                )
+
+                if let existingItem = try? context.fetch(itemDescriptor).first {
+                    if existingItem.currentSyncStatus == .synced {
+                        existingItem.updateFromServer(item)
+                    }
+                } else {
+                    let cachedItem = CachedShoppingItem.from(item, listServerId: serverId)
+                    cachedItem.shoppingList = cachedList
+                    context.insert(cachedItem)
+                }
+            }
+        }
+
+        try? context.save()
+    }
+
+    @MainActor
+    private func toggleItemInCache(listServerId: Int, itemServerId: Int) {
+        let context = OfflineDataContainer.shared.context
+        let descriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate { $0.serverId == itemServerId }
+        )
+
+        if let item = try? context.fetch(descriptor).first {
+            item.toggle()
+            try? context.save()
+        }
+    }
+
+    @MainActor
+    private func addItemToCache(listServerId: Int, name: String, quantity: Int, category: String) {
+        let context = OfflineDataContainer.shared.context
+        var parentList: CachedShoppingList?
+
+        // Find parent list - handle offline-created lists with negative IDs
+        if listServerId < 0 {
+            // Search by localId hash
+            let allDescriptor = FetchDescriptor<CachedShoppingList>()
+            if let allLists = try? context.fetch(allDescriptor) {
+                parentList = allLists.first { -abs($0.localId.hashValue) == listServerId }
+            }
+        } else {
+            let listDescriptor = FetchDescriptor<CachedShoppingList>(
+                predicate: #Predicate { $0.serverId == listServerId }
+            )
+            parentList = try? context.fetch(listDescriptor).first
+        }
+
+        // Use parent's serverId if available, otherwise nil for offline lists
+        let actualServerId = parentList?.serverId
+
+        let newItem = CachedShoppingItem(
+            name: name,
+            quantity: quantity,
+            category: category,
+            shoppingListServerId: actualServerId
+        )
+
+        if let parentList = parentList {
+            newItem.shoppingList = parentList
+        }
+
+        context.insert(newItem)
+
+        // Only queue for sync if we have a valid server ID (i.e., list was synced)
+        if let actualServerId = actualServerId {
+            do {
+                try OutboxManager.shared.queueCreate(
+                    entityType: .shoppingItem,
+                    localEntityId: newItem.localId,
+                    endpoint: "/shopping/\(actualServerId)/items",
+                    payload: newItem.toCreateRequest(),
+                    parentServerId: actualServerId
+                )
+            } catch {
+                print("[ShoppingViewModel] Failed to queue item creation: \(error)")
+            }
+        } else {
+            // For offline-created lists, items will be synced when the list is synced
+            print("[ShoppingViewModel] Item added to offline list - will sync when list syncs")
+        }
+
+        try? context.save()
+
+        // Update selectedList
+        if let cached = loadListFromCache(serverId: listServerId) {
+            selectedList = cached
+        }
+    }
+
+    @MainActor
+    private func deleteItemFromCache(listServerId: Int, itemServerId: Int) {
+        let context = OfflineDataContainer.shared.context
+        let descriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate { $0.serverId == itemServerId }
+        )
+
+        if let item = try? context.fetch(descriptor).first {
+            item.markAsDeleted()
+            try? context.save()
+        }
+    }
+
+    @MainActor
+    private func clearCheckedItemsFromCache(listServerId: Int) {
+        let context = OfflineDataContainer.shared.context
+        let descriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate { $0.shoppingListServerId == listServerId && $0.isChecked == true }
+        )
+
+        if let items = try? context.fetch(descriptor) {
+            for item in items {
+                item.markAsDeleted()
+            }
+            try? context.save()
+        }
+    }
+
+    // MARK: - Queue Operations
+
+    @MainActor
+    private func queueToggleItem(listId: Int, itemId: Int) {
+        let context = OfflineDataContainer.shared.context
+        let descriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate { $0.serverId == itemId }
+        )
+
+        if let item = try? context.fetch(descriptor).first {
+            do {
+                try OutboxManager.shared.queueToggle(
+                    entityType: .shoppingItem,
+                    localEntityId: item.localId,
+                    serverId: itemId,
+                    endpoint: "/shopping/\(listId)/items/\(itemId)/toggle"
+                )
+            } catch {
+                print("[ShoppingViewModel] Failed to queue toggle: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func queueDeleteItem(listId: Int, itemId: Int) {
+        let context = OfflineDataContainer.shared.context
+        let descriptor = FetchDescriptor<CachedShoppingItem>(
+            predicate: #Predicate { $0.serverId == itemId }
+        )
+
+        if let item = try? context.fetch(descriptor).first {
+            do {
+                try OutboxManager.shared.queueDelete(
+                    entityType: .shoppingItem,
+                    localEntityId: item.localId,
+                    serverId: itemId,
+                    endpoint: "/shopping/\(listId)/items/\(itemId)"
+                )
+            } catch {
+                print("[ShoppingViewModel] Failed to queue delete: \(error)")
+            }
+        }
     }
 }
 
@@ -207,7 +701,19 @@ struct ShoppingListsView: View {
                         HStack {
                             Image(systemName: "cart.fill").foregroundColor(AppColors.shopping)
                             VStack(alignment: .leading) {
-                                Text(list.name).font(AppTypography.headline)
+                                HStack(spacing: 6) {
+                                    Text(list.name).font(AppTypography.headline)
+                                    // Pending indicator for offline-created lists
+                                    if list.isOfflineCreated {
+                                        Text("Pending")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .cornerRadius(4)
+                                    }
+                                }
                                 Text("\(list.uncheckedCount ?? 0) remaining").font(AppTypography.caption).foregroundColor(AppColors.textSecondary)
                             }
                             Spacer()
@@ -505,10 +1011,19 @@ struct ShoppingDetailView: View {
                 .foregroundColor(isChecked ? AppColors.success : AppColors.textTertiary)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(AppTypography.bodyMedium)
-                    .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
-                    .strikethrough(isChecked)
+                HStack(spacing: 6) {
+                    Text(item.name)
+                        .font(AppTypography.bodyMedium)
+                        .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
+                        .strikethrough(isChecked)
+
+                    // Pending indicator for offline-created items
+                    if item.isOfflineCreated {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                    }
+                }
 
                 if let notes = item.notes, !notes.isEmpty {
                     Text(notes)
@@ -638,6 +1153,23 @@ struct ShoppingDetailView: View {
 
             Spacer()
 
+            // Pending sync indicator for offline-created lists
+            if list.isOfflineCreated {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12))
+                    Text("Pending Sync")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange)
+                .cornerRadius(6)
+
+                Spacer()
+            }
+
             HStack(spacing: 4) {
                 Text("\(done)")
                     .font(.system(size: 18, weight: .bold))
@@ -680,10 +1212,19 @@ struct ShoppingDetailView: View {
                 .foregroundColor(isChecked ? AppColors.success : AppColors.textTertiary)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(AppTypography.bodyMedium)
-                    .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
-                    .strikethrough(isChecked)
+                HStack(spacing: 6) {
+                    Text(item.name)
+                        .font(AppTypography.bodyMedium)
+                        .foregroundColor(isChecked ? AppColors.textTertiary : AppColors.textPrimary)
+                        .strikethrough(isChecked)
+
+                    // Pending indicator for offline-created items
+                    if item.isOfflineCreated {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                    }
+                }
 
                 if let notes = item.notes, !notes.isEmpty {
                     Text(notes)
@@ -1060,19 +1601,62 @@ struct CreateShoppingListView: View {
 
     private func createList() async {
         isCreating = true
+
+        let storeName = selectedStore.isEmpty ? nil : stores.first { $0.0 == selectedStore }?.1
+
+        // Check if offline
+        print("[CreateList] NetworkMonitor.isConnected = \(NetworkMonitor.shared.isConnected)")
+        if !NetworkMonitor.shared.isConnected {
+            print("[CreateList] OFFLINE - Creating locally")
+            await createListOffline(name: name, storeName: storeName, color: selectedColor)
+            await MainActor.run { router.goBack() }
+            isCreating = false
+            return
+        }
+
         do {
+            print("[CreateList] ONLINE - Sending to server...")
             let body = CreateShoppingListRequest(
                 name: name,
-                storeName: selectedStore.isEmpty ? nil : stores.first { $0.0 == selectedStore }?.1,
+                storeName: storeName,
                 color: selectedColor
             )
-            let _: CreateShoppingListResponse = try await APIClient.shared.request(.createShoppingList, body: body)
+            let response: CreateShoppingListResponse = try await APIClient.shared.request(.createShoppingList, body: body)
+            print("[CreateList] SUCCESS - Server created list with ID: \(response.list?.id ?? -1)")
             await MainActor.run { router.goBack() }
         } catch {
-            // Still go back on error - list might have been created
+            print("[CreateList] ERROR - \(error). Falling back to offline creation.")
+            await createListOffline(name: name, storeName: storeName, color: selectedColor)
             await MainActor.run { router.goBack() }
         }
         isCreating = false
+    }
+
+    @MainActor
+    private func createListOffline(name: String, storeName: String?, color: String) {
+        let context = OfflineDataContainer.shared.context
+
+        let newList = CachedShoppingList(
+            name: name,
+            storeName: storeName,
+            color: color
+        )
+
+        context.insert(newList)
+
+        // Queue for sync
+        do {
+            try OutboxManager.shared.queueCreate(
+                entityType: .shoppingList,
+                localEntityId: newList.localId,
+                endpoint: "/api/v1/shopping",
+                payload: newList.toCreateRequest()
+            )
+        } catch {
+            print("[CreateShoppingListView] Failed to queue list creation: \(error)")
+        }
+
+        try? context.save()
     }
 }
 

@@ -39,8 +39,17 @@ final class RemindersViewModel {
     @MainActor
     func loadReminder(id: Int) async {
         isLoading = selectedReminder == nil
-        do { selectedReminder = try await APIClient.shared.request(.reminder(id: id)) }
-        catch { errorMessage = "Failed to load reminder" }
+        errorMessage = nil
+        do {
+            let response: ReminderDetailResponse = try await APIClient.shared.request(.reminder(id: id))
+            selectedReminder = response.reminder
+            if selectedReminder == nil {
+                errorMessage = "Reminder not found"
+            }
+        } catch {
+            errorMessage = "Failed to load reminder"
+            print("DEBUG: Load reminder error: \(error)")
+        }
         isLoading = false
     }
 
@@ -679,121 +688,195 @@ struct ReminderDetailView: View {
     @State private var viewModel = RemindersViewModel()
 
     var body: some View {
-        ZStack {
+        Group {
             if viewModel.isLoading {
-                LoadingView(message: "Loading...")
+                LoadingView(message: "Loading reminder...")
             } else if let reminder = viewModel.selectedReminder {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Header Card
-                        VStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(categoryColor(reminder.category).opacity(0.15))
-                                    .frame(width: 72, height: 72)
-                                Image(systemName: reminder.categoryIcon ?? "bell.fill")
-                                    .font(.system(size: 32))
-                                    .foregroundColor(categoryColor(reminder.category))
-                            }
-
-                            Text(reminder.title)
-                                .font(AppTypography.displaySmall)
-                                .multilineTextAlignment(.center)
-
-                            HStack(spacing: 8) {
-                                Badge(text: statusDisplayName(reminder.status), color: statusColor(reminder.status))
-                                Badge(text: (reminder.priority ?? "medium").capitalized, color: priorityColor(reminder.priority))
-                            }
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(AppColors.background)
-                        .cornerRadius(16)
-
-                        // Due Date Card
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        .frame(width: 40, height: 40)
-                                    Image(systemName: "calendar")
-                                        .foregroundColor(.white)
-                                }
-                                Text("Due Date")
-                                    .font(AppTypography.headline)
-                            }
-
-                            HStack {
-                                Text(reminder.dueText ?? "Not set")
-                                    .font(AppTypography.bodyMedium)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                if let formatted = reminder.dueDateFormatted {
-                                    Text(formatted)
-                                        .font(AppTypography.bodySmall)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .padding(12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-
-                            if let time = reminder.dueTimeFormatted {
-                                HStack {
-                                    Text("Time")
-                                        .font(AppTypography.bodySmall)
-                                        .foregroundColor(AppColors.textSecondary)
-                                    Spacer()
-                                    Text(time)
-                                        .font(AppTypography.bodySmall)
-                                        .fontWeight(.medium)
-                                }
-                                .padding(12)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                            }
-                        }
-                        .padding()
-                        .background(AppColors.background)
-                        .cornerRadius(16)
-
-                        // Description Card
-                        if let desc = reminder.description, !desc.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack(spacing: 10) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            .frame(width: 40, height: 40)
-                                        Image(systemName: "doc.text.fill")
-                                            .foregroundColor(.white)
-                                    }
-                                    Text("Description")
-                                        .font(AppTypography.headline)
-                                }
-
-                                Text(desc)
-                                    .font(AppTypography.bodySmall)
-                                    .foregroundColor(AppColors.textSecondary)
-                                    .padding(12)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(10)
-                            }
-                            .padding()
-                            .background(AppColors.background)
-                            .cornerRadius(16)
-                        }
+                reminderContent(reminder: reminder)
+            } else if let error = viewModel.errorMessage {
+                ErrorView(message: error) {
+                    Task {
+                        await viewModel.loadReminder(id: reminderId)
                     }
-                    .padding()
                 }
-                .background(Color(.systemGroupedBackground))
+            } else {
+                // Default state - still loading or initial state
+                VStack {
+                    ProgressView()
+                    Text("Loading reminder...")
+                        .font(AppTypography.caption)
+                        .foregroundColor(AppColors.textSecondary)
+                }
             }
         }
         .navigationTitle("Reminder")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.loadReminder(id: reminderId) }
+    }
+
+    private func reminderContent(reminder: Reminder) -> some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header Card
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(categoryColor(reminder.category).opacity(0.15))
+                            .frame(width: 72, height: 72)
+                        Image(systemName: reminder.categoryIcon ?? "bell.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(categoryColor(reminder.category))
+                    }
+
+                    Text(reminder.title)
+                        .font(AppTypography.displaySmall)
+                        .multilineTextAlignment(.center)
+
+                    HStack(spacing: 8) {
+                        Badge(text: statusDisplayName(reminder.status), color: statusColor(reminder.status))
+                        Badge(text: (reminder.priority ?? "medium").capitalized, color: priorityColor(reminder.priority))
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(AppColors.background)
+                .cornerRadius(16)
+
+                // Due Date Card
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "calendar")
+                                .foregroundColor(.white)
+                        }
+                        Text("Due Date")
+                            .font(AppTypography.headline)
+                    }
+
+                    HStack {
+                        Text(reminder.dueText ?? "Not set")
+                            .font(AppTypography.bodyMedium)
+                            .fontWeight(.medium)
+                        Spacer()
+                        if let formatted = reminder.dueDateFormatted {
+                            Text(formatted)
+                                .font(AppTypography.bodySmall)
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+
+                    if let time = reminder.dueTimeFormatted {
+                        HStack {
+                            Text("Time")
+                                .font(AppTypography.bodySmall)
+                                .foregroundColor(AppColors.textSecondary)
+                            Spacer()
+                            Text(time)
+                                .font(AppTypography.bodySmall)
+                                .fontWeight(.medium)
+                        }
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                    }
+                }
+                .padding()
+                .background(AppColors.background)
+                .cornerRadius(16)
+
+                // Description Card
+                if let desc = reminder.description, !desc.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: "doc.text.fill")
+                                    .foregroundColor(.white)
+                            }
+                            Text("Description")
+                                .font(AppTypography.headline)
+                        }
+
+                        Text(desc)
+                            .font(AppTypography.bodySmall)
+                            .foregroundColor(AppColors.textSecondary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                    }
+                    .padding()
+                    .background(AppColors.background)
+                    .cornerRadius(16)
+                }
+
+                // Category Card
+                if let category = reminder.category, !category.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(LinearGradient(colors: [categoryColor(category), categoryColor(category).opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: reminder.categoryIcon ?? "tag.fill")
+                                    .foregroundColor(.white)
+                            }
+                            Text("Category")
+                                .font(AppTypography.headline)
+                        }
+
+                        Text(category.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(AppTypography.bodyMedium)
+                            .fontWeight(.medium)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                    }
+                    .padding()
+                    .background(AppColors.background)
+                    .cornerRadius(16)
+                }
+
+                // Recurring Info Card
+                if reminder.isRecurring == true, let pattern = reminder.recurrencePattern {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: "repeat")
+                                    .foregroundColor(.white)
+                            }
+                            Text("Recurring")
+                                .font(AppTypography.headline)
+                        }
+
+                        Text(pattern.capitalized)
+                            .font(AppTypography.bodyMedium)
+                            .fontWeight(.medium)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                    }
+                    .padding()
+                    .background(AppColors.background)
+                    .cornerRadius(16)
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
     }
 
     private func statusDisplayName(_ status: String?) -> String {

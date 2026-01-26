@@ -91,6 +91,83 @@ struct Asset: Codable, Identifiable, Equatable {
     static func == (lhs: Asset, rhs: Asset) -> Bool {
         lhs.id == rhs.id
     }
+
+    // Memberwise initializer for creating from cache
+    init(
+        id: Int,
+        name: String,
+        imageUrl: String? = nil,
+        assetCategory: String? = nil,
+        assetType: String? = nil,
+        description: String? = nil,
+        notes: String? = nil,
+        acquisitionDate: String? = nil,
+        purchaseValue: Double? = nil,
+        currentValue: Double? = nil,
+        currency: String? = nil,
+        formattedCurrentValue: String? = nil,
+        locationAddress: String? = nil,
+        locationCity: String? = nil,
+        locationState: String? = nil,
+        locationZip: String? = nil,
+        locationCountry: String? = nil,
+        storageLocation: String? = nil,
+        roomLocation: String? = nil,
+        status: String? = nil,
+        statusColor: String? = nil,
+        ownershipType: String? = nil,
+        isInsured: Bool? = nil,
+        insuranceProvider: String? = nil,
+        insurancePolicyNumber: String? = nil,
+        insuranceRenewalDate: String? = nil,
+        vehicleMake: String? = nil,
+        vehicleModel: String? = nil,
+        vehicleYear: Int? = nil,
+        vinRegistration: String? = nil,
+        licensePlate: String? = nil,
+        mileage: Int? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil,
+        owners: [AssetOwner]? = nil,
+        documentsCount: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.imageUrl = imageUrl
+        self.assetCategory = assetCategory
+        self.assetType = assetType
+        self.description = description
+        self.notes = notes
+        self.acquisitionDate = acquisitionDate
+        self.purchaseValueRaw = purchaseValue.map { StringOrDouble.double($0) }
+        self.currentValueRaw = currentValue.map { StringOrDouble.double($0) }
+        self.currency = currency
+        self.formattedCurrentValue = formattedCurrentValue
+        self.locationAddress = locationAddress
+        self.locationCity = locationCity
+        self.locationState = locationState
+        self.locationZip = locationZip
+        self.locationCountry = locationCountry
+        self.storageLocation = storageLocation
+        self.roomLocation = roomLocation
+        self.status = status
+        self.statusColor = statusColor
+        self.ownershipType = ownershipType
+        self.isInsured = isInsured
+        self.insuranceProvider = insuranceProvider
+        self.insurancePolicyNumber = insurancePolicyNumber
+        self.insuranceRenewalDate = insuranceRenewalDate
+        self.vehicleMake = vehicleMake
+        self.vehicleModel = vehicleModel
+        self.vehicleYear = vehicleYear
+        self.vinRegistration = vinRegistration
+        self.licensePlate = licensePlate
+        self.mileage = mileage
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.owners = owners
+        self.documentsCount = documentsCount
+    }
 }
 
 struct AssetOwner: Codable, Identifiable {

@@ -1,8 +1,14 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct FamilyLedgerApp: App {
     @State private var appState = AppState()
+
+    init() {
+        // Start network monitoring for offline mode
+        NetworkMonitor.shared.start()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -76,6 +82,9 @@ struct RootView: View {
                     OnboardingContainerView()
                 } else {
                     MainTabView()
+                    #if DEBUG
+                        .offlineDebugOverlay()
+                    #endif
                 }
             } else {
                 LoginView()

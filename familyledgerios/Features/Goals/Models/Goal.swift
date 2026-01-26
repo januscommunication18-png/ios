@@ -99,6 +99,67 @@ struct Goal: Codable, Identifiable, Equatable {
         }
     }
 
+    // Memberwise initializer for creating from cache
+    init(
+        id: Int,
+        title: String,
+        description: String? = nil,
+        targetDate: String? = nil,
+        progress: Int? = nil,
+        status: String? = nil,
+        priority: String? = nil,
+        category: String? = nil,
+        categoryEmoji: String? = nil,
+        categoryColor: String? = nil,
+        goalType: String? = nil,
+        habitFrequency: String? = nil,
+        milestoneTarget: Int? = nil,
+        milestoneCurrent: Int? = nil,
+        milestoneUnit: String? = nil,
+        milestoneProgress: Double? = nil,
+        assignmentType: String? = nil,
+        isKidGoal: Bool? = nil,
+        checkInFrequency: String? = nil,
+        rewardsEnabled: Bool? = nil,
+        rewardType: String? = nil,
+        rewardCustom: String? = nil,
+        rewardClaimed: Bool? = nil,
+        activeTasksCount: Int? = nil,
+        completedTasksCount: Int? = nil,
+        totalTasksCount: Int? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.targetDate = targetDate
+        self.progress = progress
+        self.status = status
+        self.priority = priority
+        self.category = category
+        self.categoryEmoji = categoryEmoji
+        self.categoryColor = categoryColor
+        self.goalType = goalType
+        self.habitFrequency = habitFrequency
+        self.milestoneTarget = milestoneTarget
+        self.milestoneCurrent = milestoneCurrent
+        self.milestoneUnit = milestoneUnit
+        self.milestoneProgress = milestoneProgress
+        self.assignmentType = assignmentType
+        self.isKidGoal = isKidGoal
+        self.checkInFrequency = checkInFrequency
+        self.rewardsEnabled = rewardsEnabled
+        self.rewardType = rewardType
+        self.rewardCustom = rewardCustom
+        self.rewardClaimed = rewardClaimed
+        self.activeTasksCount = activeTasksCount
+        self.completedTasksCount = completedTasksCount
+        self.totalTasksCount = totalTasksCount
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
     static func == (lhs: Goal, rhs: Goal) -> Bool {
         lhs.id == rhs.id
     }
@@ -202,6 +263,41 @@ struct GoalTask: Codable, Identifiable, Equatable {
         case countTowardGoal = "count_toward_goal"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+
+    // Memberwise initializer for creating from cache
+    init(
+        id: Int,
+        title: String,
+        description: String? = nil,
+        dueDate: String? = nil,
+        dueTime: String? = nil,
+        priority: String? = nil,
+        status: String? = nil,
+        isRecurring: Bool? = nil,
+        recurrencePattern: String? = nil,
+        assignedTo: String? = nil,
+        goalId: Int? = nil,
+        listName: String? = nil,
+        countTowardGoal: Bool? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.dueDate = dueDate
+        self.dueTime = dueTime
+        self.priority = priority
+        self.status = status
+        self.isRecurring = isRecurring
+        self.recurrencePattern = recurrencePattern
+        self.assignedTo = assignedTo
+        self.goalId = goalId
+        self.listName = listName
+        self.countTowardGoal = countTowardGoal
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     static func == (lhs: GoalTask, rhs: GoalTask) -> Bool {

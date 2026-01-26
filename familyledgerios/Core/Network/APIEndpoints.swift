@@ -65,6 +65,11 @@ enum APIEndpoint {
     case createMemberVaccination(circleId: Int, memberId: Int)
     case updateMemberVaccination(circleId: Int, memberId: Int, vaccinationId: Int)
     case deleteMemberVaccination(circleId: Int, memberId: Int, vaccinationId: Int)
+    case storeSchoolRecord(circleId: Int, memberId: Int)
+    case updateSchoolRecord(circleId: Int, memberId: Int, schoolRecordId: Int)
+    case deleteSchoolRecord(circleId: Int, memberId: Int, schoolRecordId: Int)
+    case storeEducationDocument(circleId: Int, memberId: Int)
+    case deleteEducationDocument(circleId: Int, memberId: Int, documentId: Int)
 
     // MARK: - Expenses
     case expenses
@@ -200,6 +205,12 @@ enum APIEndpoint {
     case saveOnboardingStep(step: Int)
     case completeOnboarding
 
+    // MARK: - Sync (Offline Mode)
+    case syncPull(lastSyncAt: String, deviceId: String, entities: [String])
+    case syncPush
+    case syncResolve
+    case syncConflicts
+
     var path: String {
         switch self {
         // Auth
@@ -257,6 +268,11 @@ enum APIEndpoint {
         case .createMemberVaccination(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/vaccinations"
         case .updateMemberVaccination(let circleId, let memberId, let vaccinationId),
              .deleteMemberVaccination(let circleId, let memberId, let vaccinationId): return "/family-circles/\(circleId)/members/\(memberId)/vaccinations/\(vaccinationId)"
+        case .storeSchoolRecord(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/school-records"
+        case .updateSchoolRecord(let circleId, let memberId, let schoolRecordId),
+             .deleteSchoolRecord(let circleId, let memberId, let schoolRecordId): return "/family-circles/\(circleId)/members/\(memberId)/school-records/\(schoolRecordId)"
+        case .storeEducationDocument(let circleId, let memberId): return "/family-circles/\(circleId)/members/\(memberId)/education-documents"
+        case .deleteEducationDocument(let circleId, let memberId, let documentId): return "/family-circles/\(circleId)/members/\(memberId)/education-documents/\(documentId)"
 
         // Expenses
         case .expenses, .createExpense: return "/expenses"
@@ -353,6 +369,20 @@ enum APIEndpoint {
         case .updateOnboarding: return "/onboarding"
         case .saveOnboardingStep(let step): return "/onboarding/step/\(step)"
         case .completeOnboarding: return "/onboarding/complete"
+
+        // Sync (Offline Mode)
+        case .syncPull(let lastSyncAt, let deviceId, let entities):
+            var path = "/sync/pull?device_id=\(deviceId)"
+            if !lastSyncAt.isEmpty {
+                path += "&last_sync_at=\(lastSyncAt)"
+            }
+            if !entities.isEmpty {
+                path += "&entities=\(entities.joined(separator: ","))"
+            }
+            return path
+        case .syncPush: return "/sync/push"
+        case .syncResolve: return "/sync/resolve"
+        case .syncConflicts: return "/sync/conflicts"
         }
     }
 
@@ -378,7 +408,8 @@ enum APIEndpoint {
              .legalDocuments, .legalDocument,
              .coparenting, .coparentingChildren, .coparentingChild,
              .coparentingSchedule, .coparentingActivities, .coparentingActualTime,
-             .coparentingConversations, .coparentingConversation:
+             .coparentingConversations, .coparentingConversation,
+             .syncPull, .syncConflicts:
             return .GET
 
         // POST requests
@@ -399,7 +430,9 @@ enum APIEndpoint {
              .createCoparentingConversation, .sendCoparentingMessage,
              .updateOnboarding, .saveOnboardingStep, .completeOnboarding,
              .createMemberDocument, .createMemberAllergy, .createMemberMedication, .createMemberEmergencyContact,
-             .createMemberCondition, .createMemberProvider, .createMemberVaccination:
+             .createMemberCondition, .createMemberProvider, .createMemberVaccination,
+             .storeSchoolRecord, .storeEducationDocument,
+             .syncPush, .syncResolve:
             return .POST
 
         // PUT requests
@@ -411,7 +444,8 @@ enum APIEndpoint {
              .updateFamilyCircleMember,
              .updateMemberDocument, .updateMemberMedicalInfo, .updateMemberAllergy,
              .updateMemberMedication, .updateMemberEmergencyContact,
-             .updateMemberCondition, .updateMemberProvider, .updateMemberVaccination:
+             .updateMemberCondition, .updateMemberProvider, .updateMemberVaccination,
+             .updateSchoolRecord:
             return .PUT
 
         // DELETE requests
@@ -422,7 +456,8 @@ enum APIEndpoint {
              .deleteInsurancePolicy, .deleteTaxReturn, .deleteResource,
              .deleteFamilyCircleMember,
              .deleteMemberDocument, .deleteMemberAllergy, .deleteMemberMedication, .deleteMemberEmergencyContact,
-             .deleteMemberCondition, .deleteMemberProvider, .deleteMemberVaccination:
+             .deleteMemberCondition, .deleteMemberProvider, .deleteMemberVaccination,
+             .deleteSchoolRecord, .deleteEducationDocument:
             return .DELETE
         }
     }

@@ -218,8 +218,14 @@ struct FamilyMember: Codable, Identifiable, Equatable {
     var medications: [FamilyMemberMedication]?
     var vaccinations: [MemberVaccination]?
 
+    // Education / School
+    var schoolInfo: MemberSchoolInfo?
+    var schoolRecords: [MemberSchoolInfo]?
+
     enum CodingKeys: String, CodingKey {
         case id, email, phone, age, relationship, contacts, allergies, medications, vaccinations
+        case schoolInfo = "school_info"
+        case schoolRecords = "school_records"
         case firstName = "first_name"
         case lastName = "last_name"
         case fullName = "full_name"
@@ -279,6 +285,8 @@ struct FamilyMember: Codable, Identifiable, Equatable {
         healthcareProviders = try? container.decodeIfPresent([HealthcareProvider].self, forKey: .healthcareProviders)
         medications = try? container.decodeIfPresent([FamilyMemberMedication].self, forKey: .medications)
         vaccinations = try? container.decodeIfPresent([MemberVaccination].self, forKey: .vaccinations)
+        schoolInfo = try? container.decodeIfPresent(MemberSchoolInfo.self, forKey: .schoolInfo)
+        schoolRecords = try? container.decodeIfPresent([MemberSchoolInfo].self, forKey: .schoolRecords)
     }
 
     var displayName: String {
@@ -531,6 +539,135 @@ struct FamilyMemberMedication: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, name, dosage, frequency
         case isActive = "is_active"
+    }
+}
+
+// MARK: - Member Education Document
+
+struct MemberEducationDocument: Codable, Identifiable {
+    let id: Int
+    let documentType: String?
+    let documentTypeName: String?
+    let title: String?
+    let description: String?
+    let schoolYear: String?
+    let gradeLevel: String?
+    let filePath: String?
+    let fileName: String?
+    let fileSize: Int?
+    let mimeType: String?
+    let fileUrl: String?
+    let formattedFileSize: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, description
+        case documentType = "document_type"
+        case documentTypeName = "document_type_name"
+        case schoolYear = "school_year"
+        case gradeLevel = "grade_level"
+        case filePath = "file_path"
+        case fileName = "file_name"
+        case fileSize = "file_size"
+        case mimeType = "mime_type"
+        case fileUrl = "file_url"
+        case formattedFileSize = "formatted_file_size"
+        case createdAt = "created_at"
+    }
+
+    var displayTitle: String {
+        title ?? documentTypeName ?? "Document"
+    }
+
+    var fileIcon: String {
+        let mime = mimeType ?? ""
+        if mime.contains("pdf") {
+            return "doc.fill"
+        } else if mime.contains("image") {
+            return "photo.fill"
+        } else if mime.contains("word") || mime.contains("document") {
+            return "doc.text.fill"
+        }
+        return "doc.fill"
+    }
+}
+
+// MARK: - Member School Info
+
+struct MemberSchoolInfo: Codable, Identifiable {
+    let id: Int
+    let schoolName: String?
+    let gradeLevel: String?
+    let gradeLevelName: String?
+    let schoolYear: String?
+    let isCurrent: Bool?
+    let startDate: String?
+    let endDate: String?
+    let studentId: String?
+    let schoolAddress: String?
+    let schoolPhone: String?
+    let schoolEmail: String?
+    let teacherName: String?
+    let teacherEmail: String?
+    let counselorName: String?
+    let counselorEmail: String?
+    let busNumber: String?
+    let busPickupTime: String?
+    let busDropoffTime: String?
+    let notes: String?
+    let documents: [MemberEducationDocument]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, notes, documents
+        case schoolName = "school_name"
+        case gradeLevel = "grade_level"
+        case gradeLevelName = "grade_level_name"
+        case schoolYear = "school_year"
+        case isCurrent = "is_current"
+        case startDate = "start_date"
+        case endDate = "end_date"
+        case studentId = "student_id"
+        case schoolAddress = "school_address"
+        case schoolPhone = "school_phone"
+        case schoolEmail = "school_email"
+        case teacherName = "teacher_name"
+        case teacherEmail = "teacher_email"
+        case counselorName = "counselor_name"
+        case counselorEmail = "counselor_email"
+        case busNumber = "bus_number"
+        case busPickupTime = "bus_pickup_time"
+        case busDropoffTime = "bus_dropoff_time"
+    }
+
+    var displayGradeLevel: String {
+        gradeLevelName ?? gradeLevel ?? ""
+    }
+
+    var formattedDateRange: String? {
+        let start = startDate ?? ""
+        let end = isCurrent == true ? "Present" : (endDate ?? "")
+        if start.isEmpty && end.isEmpty {
+            return schoolYear
+        }
+        if start.isEmpty {
+            return end
+        }
+        if end.isEmpty {
+            return start
+        }
+        return "\(start) - \(end)"
+    }
+
+    var hasBusInfo: Bool {
+        busNumber != nil && !(busNumber?.isEmpty ?? true)
+    }
+
+    var hasTeacherInfo: Bool {
+        teacherName != nil && !(teacherName?.isEmpty ?? true)
+    }
+
+    var hasCounselorInfo: Bool {
+        counselorName != nil && !(counselorName?.isEmpty ?? true)
     }
 }
 

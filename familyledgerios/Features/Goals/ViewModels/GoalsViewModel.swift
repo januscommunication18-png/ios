@@ -1,4 +1,6 @@
 import Foundation
+import SwiftData
+import Combine
 
 struct CreateGoalRequest: Encodable {
     let title: String
@@ -89,6 +91,25 @@ final class GoalsViewModel {
     var errorMessage: String?
     var successMessage: String?
 
+    // Offline mode support
+    var isOffline: Bool { !NetworkMonitor.shared.isConnected }
+    private var modelContext: ModelContext?
+    private var networkCancellable: AnyCancellable?
+
+    init() {
+        modelContext = OfflineDataContainer.shared.mainContext
+
+        // Listen for network changes to sync when back online
+        networkCancellable = NotificationCenter.default.publisher(for: .networkStatusChanged)
+            .sink { [weak self] notification in
+                if let isConnected = notification.userInfo?["isConnected"] as? Bool, isConnected {
+                    Task { @MainActor in
+                        await self?.syncPendingOperations()
+                    }
+                }
+            }
+    }
+
     // Form fields - Basic
     var title = ""
     var description = ""
@@ -142,10 +163,21 @@ final class GoalsViewModel {
         isLoading = goals.isEmpty && tasks.isEmpty
         errorMessage = nil
 
+        // Load from cache first for instant display
+        loadGoalsFromCache()
+
+        // If offline, don't try server
+        guard !isOffline else {
+            isLoading = false
+            return
+        }
+
         do {
             let response: GoalsResponse = try await APIClient.shared.request(.goals)
             goals = response.goals ?? []
             tasks = response.tasks ?? []
+            // Cache to local storage
+            cacheGoalsToLocal(goals: goals, tasks: tasks)
         } catch let error as APIError {
             errorMessage = error.localizedDescription
         } catch {
@@ -158,10 +190,19 @@ final class GoalsViewModel {
     @MainActor
     func refreshGoals() async {
         isRefreshing = true
+
+        // If offline, just load from cache
+        guard !isOffline else {
+            loadGoalsFromCache()
+            isRefreshing = false
+            return
+        }
+
         do {
             let response: GoalsResponse = try await APIClient.shared.request(.goals)
             goals = response.goals ?? []
             tasks = response.tasks ?? []
+            cacheGoalsToLocal(goals: goals, tasks: tasks)
         } catch { }
         isRefreshing = false
     }
@@ -171,11 +212,23 @@ final class GoalsViewModel {
         print("🎯 Loading goal with id: \(id)")
         isLoading = true
         errorMessage = nil
+
+        // Load from cache first
+        loadGoalFromCache(id: id)
+
+        // If offline, don't try server
+        guard !isOffline else {
+            isLoading = false
+            return
+        }
+
         do {
             let response: GoalDetailResponse = try await APIClient.shared.request(.goal(id: id))
             selectedGoal = response.goal
             selectedGoalTasks = response.tasks
             print("🎯 Successfully loaded goal: \(response.goal.title) with \(response.tasks.count) tasks")
+            // Cache to local storage
+            cacheGoalDetailToLocal(goal: response.goal, tasks: response.tasks)
         } catch let error as APIError {
             errorMessage = error.localizedDescription
             print("🎯 APIError loading goal: \(error.localizedDescription)")
@@ -192,6 +245,14 @@ final class GoalsViewModel {
         errorMessage = nil
 
         print("DEBUG: Creating goal with title: \(title)")
+
+        // If offline, create locally and queue for sync
+        if isOffline {
+            let success = createGoalOffline()
+            clearForm()
+            isLoading = false
+            return success
+        }
 
         do {
             let body = CreateGoalRequest(
@@ -221,9 +282,23 @@ final class GoalsViewModel {
             return true
         } catch let error as APIError {
             print("DEBUG: APIError creating goal: \(error.localizedDescription)")
+            // On error, create offline
+            let success = createGoalOffline()
+            if success {
+                clearForm()
+                isLoading = false
+                return true
+            }
             errorMessage = error.localizedDescription
         } catch {
             print("DEBUG: Error creating goal: \(error)")
+            // On error, create offline
+            let success = createGoalOffline()
+            if success {
+                clearForm()
+                isLoading = false
+                return true
+            }
             errorMessage = "Failed to create goal: \(error.localizedDescription)"
         }
         isLoading = false
@@ -233,9 +308,20 @@ final class GoalsViewModel {
     @MainActor
     func deleteGoal(id: Int) async -> Bool {
         isLoading = true
+
+        // If offline, queue and update cache
+        if isOffline {
+            queueDeleteGoal(id: id)
+            deleteGoalFromCache(id: id)
+            goals.removeAll { $0.id == id }
+            isLoading = false
+            return true
+        }
+
         do {
             try await APIClient.shared.requestEmpty(.deleteGoal(id: id))
             goals.removeAll { $0.id == id }
+            deleteGoalFromCache(id: id)
             isLoading = false
             return true
         } catch {
@@ -247,6 +333,22 @@ final class GoalsViewModel {
 
     @MainActor
     func completeGoal(id: Int) async {
+        // If offline, queue and update cache
+        if isOffline {
+            queueCompleteGoal(id: id)
+            completeGoalInCache(id: id)
+            // Update in-memory
+            if let index = goals.firstIndex(where: { $0.id == id }) {
+                var updatedGoal = goals[index]
+                // Note: Goal struct would need to be updated for this to work
+                // For now, just reload from cache
+            }
+            if selectedGoal?.id == id {
+                loadGoalFromCache(id: id)
+            }
+            return
+        }
+
         do {
             let _: Goal = try await APIClient.shared.request(.completeGoal(id: id))
             await loadGoal(id: id)
@@ -276,6 +378,14 @@ final class GoalsViewModel {
         errorMessage = nil
 
         print("DEBUG: Creating task with title: \(title)")
+
+        // If offline, create locally and queue for sync
+        if isOffline {
+            let success = createTaskOffline()
+            clearForm()
+            isLoading = false
+            return success
+        }
 
         do {
             // Format time as HH:mm
@@ -307,9 +417,23 @@ final class GoalsViewModel {
             return true
         } catch let error as APIError {
             print("DEBUG: APIError creating task: \(error.localizedDescription)")
+            // On error, create offline
+            let success = createTaskOffline()
+            if success {
+                clearForm()
+                isLoading = false
+                return true
+            }
             errorMessage = error.localizedDescription
         } catch {
             print("DEBUG: Error creating task: \(error)")
+            // On error, create offline
+            let success = createTaskOffline()
+            if success {
+                clearForm()
+                isLoading = false
+                return true
+            }
             errorMessage = "Failed to create task: \(error.localizedDescription)"
         }
         isLoading = false
@@ -318,6 +442,26 @@ final class GoalsViewModel {
 
     @MainActor
     func toggleTask(id: Int) async {
+        // If offline, queue and update cache
+        if isOffline {
+            queueToggleTask(id: id)
+            toggleTaskInCache(id: id)
+            // Update in-memory
+            if let index = tasks.firstIndex(where: { $0.id == id }) {
+                var updatedTask = tasks[index]
+                let newStatus = updatedTask.status == "completed" ? "open" : "completed"
+                // Note: GoalTask struct would need mutation support
+            }
+            if let index = selectedGoalTasks.firstIndex(where: { $0.id == id }) {
+                // Update selected goal tasks from cache
+                loadGoalFromCache(id: selectedGoal?.id ?? 0)
+            }
+            if selectedTask?.id == id {
+                loadTaskFromCache(id: id)
+            }
+            return
+        }
+
         do {
             let _: GoalTask = try await APIClient.shared.request(.toggleTask(id: id))
             await loadTask(id: id)
@@ -326,9 +470,20 @@ final class GoalsViewModel {
 
     @MainActor
     func deleteTask(id: Int) async -> Bool {
+        // If offline, queue and update cache
+        if isOffline {
+            queueDeleteTask(id: id)
+            deleteTaskFromCache(id: id)
+            tasks.removeAll { $0.id == id }
+            selectedGoalTasks.removeAll { $0.id == id }
+            return true
+        }
+
         do {
             try await APIClient.shared.requestEmpty(.deleteTask(id: id))
             tasks.removeAll { $0.id == id }
+            selectedGoalTasks.removeAll { $0.id == id }
+            deleteTaskFromCache(id: id)
             return true
         } catch {
             errorMessage = "Failed to delete task"
@@ -372,4 +527,435 @@ final class GoalsViewModel {
     }
 
     func clearError() { errorMessage = nil }
+
+    // MARK: - Cache Methods
+
+    private func loadGoalsFromCache() {
+        guard let context = modelContext else { return }
+
+        do {
+            let deletedStatus = SyncStatus.pendingDelete.rawValue
+            let goalsDescriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { goal in
+                    goal.syncStatus != deletedStatus
+                },
+                sortBy: [SortDescriptor(\CachedGoal.localUpdatedAt, order: .reverse)]
+            )
+            let cachedGoals = try context.fetch(goalsDescriptor)
+
+            let tasksDescriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { task in
+                    task.syncStatus != deletedStatus
+                },
+                sortBy: [SortDescriptor(\CachedGoalTask.localUpdatedAt, order: .reverse)]
+            )
+            let cachedTasks = try context.fetch(tasksDescriptor)
+
+            if goals.isEmpty {
+                goals = cachedGoals.map { $0.toGoal() }
+            }
+            if tasks.isEmpty {
+                tasks = cachedTasks.map { $0.toGoalTask() }
+            }
+        } catch {
+            print("Failed to load goals from cache: \(error)")
+        }
+    }
+
+    private func cacheGoalsToLocal(goals: [Goal], tasks: [GoalTask]) {
+        guard let context = modelContext else { return }
+
+        do {
+            // Cache goals
+            for goal in goals {
+                let goalId = goal.id
+                let descriptor = FetchDescriptor<CachedGoal>(
+                    predicate: #Predicate<CachedGoal> { cached in
+                        cached.serverId == goalId
+                    }
+                )
+                if let existingGoal = try context.fetch(descriptor).first {
+                    existingGoal.update(from: goal)
+                } else {
+                    let cachedGoal = CachedGoal(from: goal)
+                    context.insert(cachedGoal)
+                }
+            }
+
+            // Cache tasks
+            for task in tasks {
+                let taskId = task.id
+                let descriptor = FetchDescriptor<CachedGoalTask>(
+                    predicate: #Predicate<CachedGoalTask> { cached in
+                        cached.serverId == taskId
+                    }
+                )
+                if let existingTask = try context.fetch(descriptor).first {
+                    existingTask.update(from: task)
+                } else {
+                    let cachedTask = CachedGoalTask(from: task)
+                    context.insert(cachedTask)
+                }
+            }
+
+            try context.save()
+        } catch {
+            print("Failed to cache goals: \(error)")
+        }
+    }
+
+    private func loadGoalFromCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let goalId = id
+            let goalDescriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let cachedGoal = try context.fetch(goalDescriptor).first {
+                selectedGoal = cachedGoal.toGoal()
+
+                // Load associated tasks
+                let deletedStatus = SyncStatus.pendingDelete.rawValue
+                let tasksDescriptor = FetchDescriptor<CachedGoalTask>(
+                    predicate: #Predicate<CachedGoalTask> { cachedTask in
+                        cachedTask.goalServerId == goalId && cachedTask.syncStatus != deletedStatus
+                    },
+                    sortBy: [SortDescriptor(\CachedGoalTask.localUpdatedAt, order: .reverse)]
+                )
+                let cachedTasks = try context.fetch(tasksDescriptor)
+                selectedGoalTasks = cachedTasks.map { $0.toGoalTask() }
+            }
+        } catch {
+            print("Failed to load goal from cache: \(error)")
+        }
+    }
+
+    private func cacheGoalDetailToLocal(goal: Goal, tasks: [GoalTask]) {
+        guard let context = modelContext else { return }
+
+        do {
+            // Cache goal
+            let goalId = goal.id
+            let goalDescriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let existingGoal = try context.fetch(goalDescriptor).first {
+                existingGoal.update(from: goal)
+            } else {
+                let cachedGoal = CachedGoal(from: goal)
+                context.insert(cachedGoal)
+            }
+
+            // Cache tasks
+            for task in tasks {
+                let taskId = task.id
+                let taskDescriptor = FetchDescriptor<CachedGoalTask>(
+                    predicate: #Predicate<CachedGoalTask> { cached in
+                        cached.serverId == taskId
+                    }
+                )
+                if let existingTask = try context.fetch(taskDescriptor).first {
+                    existingTask.update(from: task)
+                } else {
+                    let cachedTask = CachedGoalTask(from: task)
+                    context.insert(cachedTask)
+                }
+            }
+
+            try context.save()
+        } catch {
+            print("Failed to cache goal detail: \(error)")
+        }
+    }
+
+    private func loadTaskFromCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let taskId = id
+            let descriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { cached in
+                    cached.serverId == taskId
+                }
+            )
+            if let cachedTask = try context.fetch(descriptor).first {
+                selectedTask = cachedTask.toGoalTask()
+            }
+        } catch {
+            print("Failed to load task from cache: \(error)")
+        }
+    }
+
+    private func deleteGoalFromCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let goalId = id
+            let descriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let cachedGoal = try context.fetch(descriptor).first {
+                cachedGoal.syncStatus = SyncStatus.pendingDelete.rawValue
+                cachedGoal.localUpdatedAt = Date()
+                try context.save()
+            }
+        } catch {
+            print("Failed to delete goal from cache: \(error)")
+        }
+    }
+
+    private func completeGoalInCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let goalId = id
+            let descriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let cachedGoal = try context.fetch(descriptor).first {
+                cachedGoal.status = "completed"
+                cachedGoal.syncStatus = SyncStatus.pendingUpdate.rawValue
+                cachedGoal.localUpdatedAt = Date()
+                try context.save()
+            }
+        } catch {
+            print("Failed to complete goal in cache: \(error)")
+        }
+    }
+
+    private func toggleTaskInCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let taskId = id
+            let descriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { cached in
+                    cached.serverId == taskId
+                }
+            )
+            if let cachedTask = try context.fetch(descriptor).first {
+                cachedTask.status = cachedTask.status == "completed" ? "open" : "completed"
+                cachedTask.syncStatus = SyncStatus.pendingUpdate.rawValue
+                cachedTask.localUpdatedAt = Date()
+                try context.save()
+            }
+        } catch {
+            print("Failed to toggle task in cache: \(error)")
+        }
+    }
+
+    private func deleteTaskFromCache(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let taskId = id
+            let descriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { cached in
+                    cached.serverId == taskId
+                }
+            )
+            if let cachedTask = try context.fetch(descriptor).first {
+                cachedTask.syncStatus = SyncStatus.pendingDelete.rawValue
+                cachedTask.localUpdatedAt = Date()
+                try context.save()
+            }
+        } catch {
+            print("Failed to delete task from cache: \(error)")
+        }
+    }
+
+    // MARK: - Queue Methods
+
+    private func queueDeleteGoal(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let goalId = id
+            let descriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let cachedGoal = try context.fetch(descriptor).first {
+                try OutboxManager.shared.queueDelete(
+                    entityType: .goal,
+                    localEntityId: cachedGoal.localId,
+                    serverId: id,
+                    endpoint: "/api/v1/goals/\(id)"
+                )
+            }
+        } catch {
+            print("Failed to queue delete goal: \(error)")
+        }
+    }
+
+    private func queueCompleteGoal(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let goalId = id
+            let descriptor = FetchDescriptor<CachedGoal>(
+                predicate: #Predicate<CachedGoal> { cached in
+                    cached.serverId == goalId
+                }
+            )
+            if let cachedGoal = try context.fetch(descriptor).first {
+                try OutboxManager.shared.queueUpdate(
+                    entityType: .goal,
+                    localEntityId: cachedGoal.localId,
+                    serverId: id,
+                    endpoint: "/api/v1/goals/\(id)/complete",
+                    payload: ["status": "completed"]
+                )
+            }
+        } catch {
+            print("Failed to queue complete goal: \(error)")
+        }
+    }
+
+    private func queueToggleTask(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let taskId = id
+            let descriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { cached in
+                    cached.serverId == taskId
+                }
+            )
+            if let cachedTask = try context.fetch(descriptor).first {
+                try OutboxManager.shared.queueToggle(
+                    entityType: .goalTask,
+                    localEntityId: cachedTask.localId,
+                    serverId: id,
+                    endpoint: "/api/v1/tasks/\(id)/toggle"
+                )
+            }
+        } catch {
+            print("Failed to queue toggle task: \(error)")
+        }
+    }
+
+    private func queueDeleteTask(id: Int) {
+        guard let context = modelContext else { return }
+
+        do {
+            let taskId = id
+            let descriptor = FetchDescriptor<CachedGoalTask>(
+                predicate: #Predicate<CachedGoalTask> { cached in
+                    cached.serverId == taskId
+                }
+            )
+            if let cachedTask = try context.fetch(descriptor).first {
+                try OutboxManager.shared.queueDelete(
+                    entityType: .goalTask,
+                    localEntityId: cachedTask.localId,
+                    serverId: id,
+                    endpoint: "/api/v1/tasks/\(id)"
+                )
+            }
+        } catch {
+            print("Failed to queue delete task: \(error)")
+        }
+    }
+
+    // MARK: - Offline Creation Methods
+
+    private func createGoalOffline() -> Bool {
+        guard let context = modelContext else { return false }
+
+        let newGoal = CachedGoal(
+            title: title,
+            goalDescription: description.isEmpty ? nil : description,
+            status: "active",
+            priority: "medium"
+        )
+
+        newGoal.category = category
+        newGoal.goalType = goalType
+        newGoal.habitFrequency = goalType == "habit" && !habitFrequency.isEmpty ? habitFrequency : nil
+        newGoal.milestoneTarget = goalType == "milestone" && !milestoneTarget.isEmpty ? Int(milestoneTarget) : nil
+        newGoal.milestoneUnit = goalType == "milestone" && !milestoneUnit.isEmpty ? milestoneUnit : nil
+        newGoal.assignmentType = assignmentType
+        newGoal.isKidGoal = isKidGoal
+        newGoal.rewardsEnabled = rewardsEnabled
+        newGoal.rewardType = rewardsEnabled && !rewardType.isEmpty ? rewardType : nil
+        newGoal.rewardCustom = rewardsEnabled && rewardType == "custom" && !rewardCustom.isEmpty ? rewardCustom : nil
+
+        context.insert(newGoal)
+
+        // Queue for sync
+        do {
+            try OutboxManager.shared.queueCreate(
+                entityType: .goal,
+                localEntityId: newGoal.localId,
+                endpoint: "/api/v1/goals",
+                payload: newGoal.toCreateRequest()
+            )
+            try context.save()
+
+            // Add to in-memory list
+            goals.append(newGoal.toGoal())
+            return true
+        } catch {
+            print("Failed to create goal offline: \(error)")
+            return false
+        }
+    }
+
+    private func createTaskOffline() -> Bool {
+        guard let context = modelContext else { return false }
+
+        let newTask = CachedGoalTask(
+            title: title,
+            taskDescription: description.isEmpty ? nil : description,
+            dueDate: hasDueDate ? dueDate : nil,
+            status: "open",
+            priority: priority,
+            goalServerId: taskGoalId
+        )
+
+        newTask.isRecurring = isRecurring
+        newTask.recurrencePattern = isRecurring ? recurrenceFrequency : nil
+        newTask.countTowardGoal = taskGoalId != nil && countTowardGoal
+
+        context.insert(newTask)
+
+        // Queue for sync
+        do {
+            try OutboxManager.shared.queueCreate(
+                entityType: .goalTask,
+                localEntityId: newTask.localId,
+                endpoint: "/api/v1/tasks",
+                payload: newTask.toCreateRequest()
+            )
+            try context.save()
+
+            // Add to in-memory list
+            tasks.append(newTask.toGoalTask())
+            return true
+        } catch {
+            print("Failed to create task offline: \(error)")
+            return false
+        }
+    }
+
+    // MARK: - Sync Methods
+
+    @MainActor
+    private func syncPendingOperations() async {
+        // Trigger sync manager to process pending operations
+        await SyncManager.shared.syncNow()
+        // Refresh data after sync
+        await refreshGoals()
+    }
 }

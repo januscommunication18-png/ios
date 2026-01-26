@@ -162,6 +162,9 @@ struct MemberDetailView: View {
                 // Documents Section
                 documentsSection(member: member)
 
+                // Education Section
+                educationSection(member: member)
+
                 // Health & Medical Section
                 healthSection(member: member)
 
@@ -406,6 +409,72 @@ struct MemberDetailView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    // MARK: - Education Section
+
+    private func educationSection(member: FamilyMember) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section Header
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppColors.info.opacity(0.1))
+                        .frame(width: 40, height: 40)
+
+                    Text("🎓")
+                        .font(.system(size: 18))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Education")
+                        .font(AppTypography.headline)
+                        .foregroundColor(AppColors.textPrimary)
+
+                    Text("School information")
+                        .font(AppTypography.captionSmall)
+                        .foregroundColor(AppColors.textTertiary)
+                }
+
+                Spacer()
+
+                NavigationLink {
+                    MemberEducationListView(member: member, circleId: circleId)
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(AppColors.info)
+                        .padding(8)
+                        .background(AppColors.info.opacity(0.1))
+                        .cornerRadius(8)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                // Show school records if available, otherwise show single schoolInfo
+                if let schoolRecords = member.schoolRecords, !schoolRecords.isEmpty {
+                    ForEach(schoolRecords) { school in
+                        SchoolInfoCard(schoolInfo: school)
+                    }
+                } else if let schoolInfo = member.schoolInfo {
+                    SchoolInfoCard(schoolInfo: schoolInfo)
+                } else {
+                    VStack(spacing: 12) {
+                        Text("No school records on file")
+                            .font(AppTypography.bodyMedium)
+                            .foregroundColor(AppColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+        .padding()
+        .background(AppColors.background)
+        .cornerRadius(16)
     }
 
     // MARK: - Health Section
@@ -893,6 +962,183 @@ struct DocumentCard: View {
     private func maskedSsn(_ ssn: String?) -> String {
         guard let ssn = ssn, ssn.count >= 4 else { return "XXX-XX-****" }
         return "XXX-XX-\(ssn.suffix(4))"
+    }
+}
+
+// MARK: - School Info Card
+
+struct SchoolInfoCard: View {
+    let schoolInfo: MemberSchoolInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // School Name & Grade
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(AppColors.info.opacity(0.15))
+                        .frame(width: 36, height: 36)
+
+                    Text("🏫")
+                        .font(.system(size: 16))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(schoolInfo.schoolName ?? "Unknown School")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppColors.textPrimary)
+
+                    if !schoolInfo.displayGradeLevel.isEmpty {
+                        Text(schoolInfo.displayGradeLevel)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        if let dateRange = schoolInfo.formattedDateRange {
+                            HStack(spacing: 4) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(AppColors.textTertiary)
+                                Text(dateRange)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppColors.textTertiary)
+                            }
+                        }
+
+                        if schoolInfo.isCurrent == true {
+                            Text("Current")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(AppColors.success)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(AppColors.success.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    if let studentId = schoolInfo.studentId, !studentId.isEmpty {
+                        HStack(spacing: 4) {
+                            Text("Student ID:")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.textTertiary)
+                            Text(studentId)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+
+            // Teacher Info
+            if schoolInfo.hasTeacherInfo {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Teacher")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(AppColors.textTertiary)
+                        .textCase(.uppercase)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.info)
+
+                        Text(schoolInfo.teacherName ?? "")
+                            .font(.system(size: 13))
+                            .foregroundColor(AppColors.textPrimary)
+
+                        if let email = schoolInfo.teacherEmail, !email.isEmpty {
+                            Button {
+                                if let url = URL(string: "mailto:\(email)") {
+                                    UIApplication.shared.open(url)
+                                }
+                            } label: {
+                                Image(systemName: "envelope.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppColors.family)
+                            }
+                        }
+                    }
+                }
+                .padding(.leading, 48)
+            }
+
+            // Bus Info
+            if schoolInfo.hasBusInfo {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Bus Information")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(AppColors.textTertiary)
+                        .textCase(.uppercase)
+
+                    HStack(spacing: 12) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bus.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.warning)
+                            Text("Bus \(schoolInfo.busNumber ?? "")")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(AppColors.textPrimary)
+                        }
+
+                        if let pickup = schoolInfo.busPickupTime, !pickup.isEmpty {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.up.circle")
+                                    .font(.system(size: 10))
+                                Text(pickup)
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundColor(AppColors.textSecondary)
+                        }
+
+                        if let dropoff = schoolInfo.busDropoffTime, !dropoff.isEmpty {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.system(size: 10))
+                                Text(dropoff)
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundColor(AppColors.textSecondary)
+                        }
+                    }
+                }
+                .padding(.leading, 48)
+            }
+
+            // School Contact
+            if let phone = schoolInfo.schoolPhone, !phone.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "phone.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppColors.success)
+
+                    Button {
+                        if let url = URL(string: "tel:\(phone)") {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Text(phone)
+                            .font(.system(size: 13))
+                            .foregroundColor(AppColors.family)
+                    }
+                }
+                .padding(.leading, 48)
+            }
+
+            // Notes
+            if let notes = schoolInfo.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.system(size: 12))
+                    .foregroundColor(AppColors.textTertiary)
+                    .padding(.leading, 48)
+            }
+        }
+        .padding()
+        .background(AppColors.background)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.03), radius: 4, x: 0, y: 1)
     }
 }
 

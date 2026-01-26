@@ -16,7 +16,13 @@ struct ShoppingList: Codable, Identifiable, Equatable {
     let createdAt: String?
     let updatedAt: String?
 
+    // For offline-created lists (not encoded)
+    var localId: UUID?
+
     var progressPercentage: Double? { progressPercentageValue?.doubleValue }
+
+    // Check if this is an offline-created list (negative ID means local-only)
+    var isOfflineCreated: Bool { id < 0 }
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, color, icon, items
@@ -28,13 +34,14 @@ struct ShoppingList: Codable, Identifiable, Equatable {
         case progressPercentageValue = "progress_percentage"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        // localId is not included - won't be encoded/decoded from API
     }
 
     init(id: Int, name: String, description: String? = nil, storeName: String? = nil,
          color: String? = nil, icon: String? = nil, isDefault: Bool? = nil,
          itemsCount: Int? = nil, purchasedCount: Int? = nil, uncheckedCount: Int? = nil,
          progressPercentageValue: StringOrDouble? = nil, items: [ShoppingItem]? = nil,
-         createdAt: String? = nil, updatedAt: String? = nil) {
+         createdAt: String? = nil, updatedAt: String? = nil, localId: UUID? = nil) {
         self.id = id
         self.name = name
         self.description = description
@@ -49,6 +56,7 @@ struct ShoppingList: Codable, Identifiable, Equatable {
         self.items = items
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.localId = localId
     }
 
     static func == (lhs: ShoppingList, rhs: ShoppingList) -> Bool {
@@ -75,6 +83,9 @@ struct ShoppingItem: Codable, Identifiable, Equatable {
     let updatedAt: String?
 
     var price: Double? { priceValue?.doubleValue }
+
+    // Check if this is an offline-created item (negative ID means local-only)
+    var isOfflineCreated: Bool { id < 0 }
 
     enum CodingKeys: String, CodingKey {
         case id, name, quantity, unit, category, notes, priority

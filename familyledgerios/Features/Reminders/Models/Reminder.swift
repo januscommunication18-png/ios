@@ -127,3 +127,7 @@ struct RemindersResponse: Codable {
         case importantDateReminders = "important_date_reminders"
     }
 }
+
+struct ReminderDetailResponse: Codable {
+    let reminder: Reminder?
+}
